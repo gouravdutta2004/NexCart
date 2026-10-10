@@ -4,6 +4,9 @@ const cors = require('cors');
 const helmet = require('helmet');
 const morgan = require('morgan');
 
+const path = require('path');
+const fs = require('fs');
+
 const config = require('./config/env');
 const { connectDB, getDBStatus } = require('./config/db');
 const { initSocket } = require('./config/socket');
@@ -20,10 +23,45 @@ const httpServer = http.createServer(app);
 const io = initSocket(httpServer);
 
 // Security & Parsing Middlewares
-app.use(helmet());
+app.use(
+  helmet({
+    contentSecurityPolicy: false,
+    crossOriginEmbedderPolicy: false,
+  })
+);
+
+const getAllowedOrigins = () => {
+  const origins = [
+    config.CLIENT_URL,
+    'http://localhost:5173',
+    'http://127.0.0.1:5173',
+    'http://localhost:5001',
+  ].filter(Boolean);
+
+  if (config.ADDITIONAL_ORIGINS) {
+    config.ADDITIONAL_ORIGINS.split(',').forEach((o) => {
+      const trimmed = o.trim();
+      if (trimmed && !origins.includes(trimmed)) origins.push(trimmed);
+    });
+  }
+  return origins;
+};
+
 app.use(
   cors({
-    origin: [config.CLIENT_URL, 'http://localhost:5173', 'http://127.0.0.1:5173'],
+    origin: (origin, callback) => {
+      if (!origin) return callback(null, true);
+      const allowed = getAllowedOrigins();
+      if (
+        allowed.includes(origin) ||
+        origin.endsWith('.vercel.app') ||
+        origin.endsWith('.onrender.com') ||
+        origin.endsWith('.netlify.app')
+      ) {
+        return callback(null, true);
+      }
+      return callback(null, false);
+    },
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization'],
@@ -60,17 +98,34 @@ app.get('/api/health', (req, res) => {
   });
 });
 
-// Root Welcome Endpoint
-app.get('/', (req, res) => {
-  return ApiResponse.success(res, {
-    message: 'Welcome to NexCart — Intelligent Supermarket Automation API',
-    data: {
-      apiDocumentation: '/docs',
-      healthCheck: '/api/health',
-      apiVersion: 'v1',
-    },
+// Optional Static Asset Serving (Unified Single-Service Cloud Deployment)
+const frontendDistPath = path.join(__dirname, '../../frontend/dist');
+const hasStaticBuild = fs.existsSync(frontendDistPath) && fs.existsSync(path.join(frontendDistPath, 'index.html'));
+
+if (hasStaticBuild) {
+  logger.info(`📦 Serving production frontend static bundle from: ${frontendDistPath}`);
+  app.use(express.static(frontendDistPath));
+
+  // SPA fallback for all non-API GET routes
+  app.get('*', (req, res, next) => {
+    if (req.originalUrl.startsWith('/api')) {
+      return next();
+    }
+    res.sendFile(path.join(frontendDistPath, 'index.html'));
   });
-});
+} else {
+  // Root Welcome Endpoint when API is deployed standalone
+  app.get('/', (req, res) => {
+    return ApiResponse.success(res, {
+      message: 'Welcome to NexCart — Intelligent Supermarket Automation API',
+      data: {
+        apiDocumentation: '/docs',
+        healthCheck: '/api/health',
+        apiVersion: 'v1',
+      },
+    });
+  });
+}
 
 // Catch-all 404 for undefined routes
 app.all('*', (req, res, next) => {

@@ -3,9 +3,13 @@
   "version": "1.0.0",
   "description": "NexCart — Intelligent Supermarket Automation System",
   "scripts": {
+    "build": "npm run build:frontend && npm run install:backend",
+    "build:frontend": "cd frontend && npm install && npm run build",
+    "install:backend": "cd backend && npm install",
+    "start": "cd backend && npm start",
+    "seed": "cd backend && npm run seed",
     "package": "bash scripts/package-clean.sh",
     "test": "cd backend && npm test",
-    "build:frontend": "cd frontend && npm run build",
     "dev:backend": "cd backend && npm run dev",
     "dev:frontend": "cd frontend && npm run dev"
   },

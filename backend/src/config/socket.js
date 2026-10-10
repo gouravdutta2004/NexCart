@@ -4,10 +4,39 @@ const config = require('./env');
 
 let io = null;
 
+const getAllowedOrigins = () => {
+  const origins = [
+    config.CLIENT_URL,
+    'http://localhost:5173',
+    'http://127.0.0.1:5173',
+    'http://localhost:5001',
+  ].filter(Boolean);
+
+  if (config.ADDITIONAL_ORIGINS) {
+    config.ADDITIONAL_ORIGINS.split(',').forEach((o) => {
+      const trimmed = o.trim();
+      if (trimmed && !origins.includes(trimmed)) origins.push(trimmed);
+    });
+  }
+  return origins;
+};
+
 const initSocket = (httpServer) => {
   io = new Server(httpServer, {
     cors: {
-      origin: [config.CLIENT_URL, 'http://localhost:5173', 'http://127.0.0.1:5173'],
+      origin: (origin, callback) => {
+        if (!origin) return callback(null, true);
+        const allowed = getAllowedOrigins();
+        if (
+          allowed.includes(origin) ||
+          origin.endsWith('.vercel.app') ||
+          origin.endsWith('.onrender.com') ||
+          origin.endsWith('.netlify.app')
+        ) {
+          return callback(null, true);
+        }
+        return callback(null, false);
+      },
       methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'],
       credentials: true,
     },
