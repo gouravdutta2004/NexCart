@@ -78,9 +78,36 @@ if (config.NODE_ENV !== 'test') {
 // Global Rate Limiter
 app.use('/api', globalRateLimiter);
 
-// Mount API v1 Router
+// Mount API Routers
 const apiRouter = require('./routes');
 app.use('/api/v1', apiRouter);
+app.use('/api', apiRouter);
+
+// Root fallback for direct API module calls (e.g. POST /auth/register)
+const directApiPrefixes = [
+  '/auth',
+  '/products',
+  '/orders',
+  '/cart',
+  '/pos',
+  '/categories',
+  '/discounts',
+  '/suppliers',
+  '/inventory',
+  '/users',
+  '/audit-logs',
+  '/analytics',
+  '/invoices',
+  '/reviews',
+  '/purchase-orders',
+];
+
+app.use((req, res, next) => {
+  if (directApiPrefixes.some((p) => req.path.startsWith(p))) {
+    return apiRouter(req, res, next);
+  }
+  next();
+});
 
 // System Health Check Endpoint
 app.get('/api/health', (req, res) => {
