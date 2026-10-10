@@ -1,11 +1,11 @@
 import React from 'react';
 import { Navigate, Link } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import { ShieldAlert, ArrowLeft } from 'lucide-react';
+import { ShieldAlert, ArrowLeft, LogOut } from 'lucide-react';
 import { ROLE_LABELS } from '../utils/constants';
 
 export default function RoleGuard({ allowedRoles, children }) {
-  const { user, hasRole, loading } = useAuth();
+  const { user, hasRole, loading, logout } = useAuth();
 
   if (loading) {
     return (
@@ -20,6 +20,8 @@ export default function RoleGuard({ allowedRoles, children }) {
   }
 
   if (!hasRole(allowedRoles)) {
+    const isKnownRole = ['admin', 'cashier', 'inventory_manager', 'customer'].includes(user.role);
+
     return (
       <div className="min-h-screen bg-slate-950 text-white flex items-center justify-center p-4">
         <div className="max-w-md w-full bg-slate-900 border border-rose-900/50 rounded-2xl p-8 text-center shadow-2xl">
@@ -32,21 +34,30 @@ export default function RoleGuard({ allowedRoles, children }) {
             This module requires authorization for: {allowedRoles.map(r => ROLE_LABELS[r] || r).join(', ')}.
           </p>
           <div className="flex flex-col gap-3">
-            <Link
-              to={
-                user.role === 'admin'
-                  ? '/admin'
-                  : user.role === 'cashier'
-                  ? '/cashier'
-                  : user.role === 'inventory_manager'
-                  ? '/inventory'
-                  : '/customer'
-              }
-              className="inline-flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 font-semibold text-white transition-colors"
+            {isKnownRole && (
+              <Link
+                to={
+                  user.role === 'admin'
+                    ? '/admin'
+                    : user.role === 'cashier'
+                    ? '/cashier'
+                    : user.role === 'inventory_manager'
+                    ? '/inventory'
+                    : '/customer'
+                }
+                className="inline-flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 font-semibold text-white transition-colors"
+              >
+                <ArrowLeft className="w-4 h-4" />
+                Return to Your Role Workspace
+              </Link>
+            )}
+            <button
+              onClick={logout}
+              className="inline-flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl border border-slate-700 hover:bg-slate-800 text-slate-300 font-medium transition-colors"
             >
-              <ArrowLeft className="w-4 h-4" />
-              Return to Your Role Workspace
-            </Link>
+              <LogOut className="w-4 h-4" />
+              Sign Out / Switch Account
+            </button>
           </div>
         </div>
       </div>
