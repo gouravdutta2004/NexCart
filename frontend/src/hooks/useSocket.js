@@ -12,7 +12,21 @@ export const useSocket = () => {
     if (!isAuthenticated || !user) return;
 
     // Connect socket
-    const socket = io(import.meta.env.VITE_API_URL?.replace('/api/v1', '') || 'http://localhost:5001', {
+    const getSocketUrl = () => {
+      const apiUrl = import.meta.env.VITE_API_URL;
+      if (!apiUrl) {
+        if (typeof window !== 'undefined' && window.location.port === '5173') {
+          return 'http://localhost:5001';
+        }
+        return typeof window !== 'undefined' ? window.location.origin : 'http://localhost:5001';
+      }
+      if (apiUrl.startsWith('http://') || apiUrl.startsWith('https://')) {
+        return apiUrl.replace(/\/api\/v1\/?$/, '');
+      }
+      return typeof window !== 'undefined' ? window.location.origin : 'http://localhost:5001';
+    };
+
+    const socket = io(getSocketUrl(), {
       transports: ['websocket', 'polling'],
       reconnectionAttempts: 5,
     });
