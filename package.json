@@ -1,0 +1,15 @@
+{
+  "name": "nexcart",
+  "version": "1.0.0",
+  "description": "NexCart — Intelligent Supermarket Automation System",
+  "scripts": {
+    "package": "bash scripts/package-clean.sh",
+    "test": "cd backend && npm test",
+    "build:frontend": "cd frontend && npm run build",
+    "dev:backend": "cd backend && npm run dev",
+    "dev:frontend": "cd frontend && npm run dev"
+  },
+  "keywords": ["supermarket", "automation", "pos", "fefo", "mern", "inventory"],
+  "author": "NexCart Engineering Team",
+  "license": "MIT"
+}
