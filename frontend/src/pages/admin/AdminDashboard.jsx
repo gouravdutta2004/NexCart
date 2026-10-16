@@ -30,9 +30,11 @@ import Badge from '../../components/ui/Badge';
 import Card, { CardHeader, CardTitle, CardContent } from '../../components/ui/Card';
 import StatCard from '../../components/ui/StatCard';
 import { StatCardSkeleton } from '../../components/ui/Skeleton';
+import useSocket from '../../hooks/useSocket';
 
 export default function AdminDashboard() {
   const { user } = useAuth();
+  const { on, off } = useSocket();
   const [overview, setOverview] = useState(null);
   const [topProducts, setTopProducts] = useState([]);
   const [lowStockAlerts, setLowStockAlerts] = useState([]);
@@ -64,7 +66,25 @@ export default function AdminDashboard() {
 
   useEffect(() => {
     loadDashboardTelemetry();
-  }, []);
+
+    const handleTelemetryEvent = () => {
+      loadDashboardTelemetry();
+    };
+
+    on('new_order', handleTelemetryEvent);
+    on('order_status', handleTelemetryEvent);
+    on('pos_completed', handleTelemetryEvent);
+    on('low_stock', handleTelemetryEvent);
+    on('po_received', handleTelemetryEvent);
+
+    return () => {
+      off('new_order', handleTelemetryEvent);
+      off('order_status', handleTelemetryEvent);
+      off('pos_completed', handleTelemetryEvent);
+      off('low_stock', handleTelemetryEvent);
+      off('po_received', handleTelemetryEvent);
+    };
+  }, [on, off]);
 
   const testRbacEndpoint = async (roleType) => {
     setLoadingTest(true);
@@ -193,7 +213,7 @@ export default function AdminDashboard() {
                   {topProducts.slice(0, 4).map((p, idx) => (
                     <div
                       key={p.productId || idx}
-                      className="p-3 rounded-xl bg-slate-50 dark:bg-slate-850 border border-slate-200/70 dark:border-slate-800 flex items-center justify-between text-xs"
+                      className="p-3 rounded-xl bg-slate-50 dark:bg-slate-800/80 border border-slate-200/70 dark:border-slate-700/70 flex items-center justify-between text-xs"
                     >
                       <div className="flex items-center gap-2.5 min-w-0 pr-2">
                         <span className="w-5 h-5 rounded-md bg-emerald-100 dark:bg-emerald-950/80 text-emerald-700 dark:text-emerald-300 font-bold flex items-center justify-center text-[10px]">

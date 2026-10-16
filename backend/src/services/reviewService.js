@@ -25,6 +25,14 @@ const getProductReviews = async (productId) => {
 const Order = require('../models/Order');
 
 const addReview = async (customerId, { productId, rating, comment }) => {
+  if (!rating || isNaN(rating) || Number(rating) < 1 || Number(rating) > 5) {
+    throw AppError.badRequest('Rating must be a valid number between 1 and 5');
+  }
+
+  if (!comment || typeof comment !== 'string' || !comment.trim()) {
+    throw AppError.badRequest('Review comment is required');
+  }
+
   const product = await Product.findById(productId);
   if (!product) {
     throw AppError.notFound(`Product with ID '${productId}' not found`);
@@ -54,7 +62,27 @@ const addReview = async (customerId, { productId, rating, comment }) => {
   return review;
 };
 
+const { ROLES } = require('../utils/constants');
+
+const deleteReview = async (reviewId, userId, userRole) => {
+  const review = await Review.findById(reviewId);
+  if (!review) {
+    throw AppError.notFound('Review not found');
+  }
+
+  const isOwner = review.customerId && review.customerId.toString() === userId.toString();
+  const isAdmin = userRole === ROLES.ADMIN;
+
+  if (!isOwner && !isAdmin) {
+    throw AppError.forbidden('You are not authorized to delete this review');
+  }
+
+  await Review.findByIdAndDelete(reviewId);
+  return { id: reviewId };
+};
+
 module.exports = {
   getProductReviews,
   addReview,
+  deleteReview,
 };

@@ -20,6 +20,8 @@ const {
   ROLES 
 } = require('../utils/constants');
 const { escapeRegex } = require('../utils/sanitize');
+const { validateLineDiscount } = require('../utils/discountAuthorization');
+const { parsePagination } = require('../utils/paginationHelper');
 
 /**
  * Generate human-friendly unique references
@@ -74,6 +76,9 @@ const createOrder = async ({
   shippingAddress = null,
   notes = '',
   ipAddress = '',
+  requestingUser = null,
+  managerOverride = null,
+  orderStatus = null,
 }) => {
   if (!items || !Array.isArray(items) || items.length === 0) {
     throw AppError.badRequest('Order must contain at least one product item');
@@ -96,11 +101,16 @@ const createOrder = async ({
   let appliedCoupon = null;
   let isCommitted = false;
   let savedOrderDoc = null;
+  let savedPaymentDoc = null;
+  let savedInvoiceDoc = null;
+
+  const effectiveUser = requestingUser || (cashierId ? { role: ROLES.CASHIER, _id: cashierId } : (userId ? { role: ROLES.CUSTOMER, _id: userId } : null));
 
   try {
     // 1. Authoritative Pricing, Tax, and FEFO Stock Deduction
     const preparedOrderItems = [];
     let subtotal = 0;
+    let lineDiscountTotal = 0;
     let taxTotal = 0;
 
     for (const item of items) {
@@ -135,10 +145,29 @@ const createOrder = async ({
       }
 
       const itemBaseTotal = unitPrice * quantity;
-      const itemTax = (itemBaseTotal * itemTaxRate) / 100;
-      const itemTotal = itemBaseTotal + itemTax;
+      let itemDiscount = 0;
+
+      // In POS walk-in lanes, staff line discounts are authorized through the standardized engine
+      if (orderType === ORDER_TYPES.POS_WALKIN) {
+        const rawDiscount = Number(item.discount || item.discountAmount) || 0;
+        if (rawDiscount > 0) {
+          itemDiscount = validateLineDiscount({
+            user: effectiveUser,
+            lineGross: itemBaseTotal,
+            requestedDiscount: rawDiscount,
+            productName: product.name,
+            managerOverride: item.managerOverride || managerOverride,
+          });
+        }
+      }
+      // For online and self-checkout orders, client-supplied line discounts are strictly ignored in favor of server-controlled pricing and validated coupons
+
+      const itemNetBase = itemBaseTotal - itemDiscount;
+      const itemTax = (itemNetBase * itemTaxRate) / 100;
+      const itemTotal = itemNetBase + itemTax;
 
       subtotal += itemBaseTotal;
+      lineDiscountTotal += itemDiscount;
       taxTotal += itemTax;
 
       preparedOrderItems.push({
@@ -148,7 +177,7 @@ const createOrder = async ({
         barcode: product.barcode,
         quantity,
         unitPrice,
-        discountAmount: 0,
+        discountAmount: itemDiscount,
         taxRate: itemTaxRate,
         taxAmount: Math.round(itemTax * 100) / 100,
         subtotal: Math.round(itemTotal * 100) / 100,
@@ -157,10 +186,11 @@ const createOrder = async ({
     }
 
     subtotal = Math.round(subtotal * 100) / 100;
+    lineDiscountTotal = Math.round(lineDiscountTotal * 100) / 100;
     taxTotal = Math.round(taxTotal * 100) / 100;
 
     // 2. Authoritative Coupon Validation & Discount Calculation
-    let discountTotal = 0;
+    let couponDiscount = 0;
     appliedCoupon = null;
 
     if (couponCode && typeof couponCode === 'string' && couponCode.trim()) {
@@ -197,8 +227,8 @@ const createOrder = async ({
         calculatedDiscount = appliedCoupon.discountValue;
       }
 
-      calculatedDiscount = Math.min(calculatedDiscount, subtotal);
-      discountTotal = Math.round(calculatedDiscount * 100) / 100;
+      calculatedDiscount = Math.min(calculatedDiscount, Math.max(0, subtotal - lineDiscountTotal));
+      couponDiscount = Math.round(calculatedDiscount * 100) / 100;
 
       // Increment coupon usage count atomically to prevent race condition overselling slots
       const couponUpdateQuery = {
@@ -221,6 +251,7 @@ const createOrder = async ({
       appliedCoupon = incrementedCoupon;
     }
 
+    const discountTotal = Math.round((lineDiscountTotal + couponDiscount) * 100) / 100;
     const grandTotal = Math.max(0, Math.round((subtotal - discountTotal + taxTotal) * 100) / 100);
 
     // 3. Resolve Customer Snapshot
@@ -251,10 +282,10 @@ const createOrder = async ({
       subtotal,
       discountTotal,
       couponCode: appliedCoupon ? appliedCoupon.code : null,
-      couponDiscount: discountTotal,
+      couponDiscount,
       taxTotal,
       totalAmount: grandTotal,
-      orderStatus: ORDER_STATUS.COMPLETED,
+      orderStatus: orderStatus || ORDER_STATUS.COMPLETED,
       paymentStatus: PAYMENT_STATUS.COMPLETED,
       shippingAddress: shippingAddress || {},
       notes,
@@ -306,6 +337,7 @@ const createOrder = async ({
     });
 
     const payment = session ? await paymentDoc.save({ session }) : await paymentDoc.save();
+    savedPaymentDoc = payment;
 
     // 7. Create Invoice Record
     const invoiceNumber = generateReference('NXC-INV');
@@ -329,7 +361,7 @@ const createOrder = async ({
       subtotal,
       discountTotal,
       couponCode: appliedCoupon ? appliedCoupon.code : null,
-      couponDiscount: discountTotal,
+      couponDiscount,
       taxBreakdown: {
         cgst: Math.round((taxTotal / 2) * 100) / 100,
         sgst: Math.round((taxTotal / 2) * 100) / 100,
@@ -344,6 +376,7 @@ const createOrder = async ({
     });
 
     const invoice = session ? await invoiceDoc.save({ session }) : await invoiceDoc.save();
+    savedInvoiceDoc = invoice;
 
     // 8. Clear Shopping Cart if customer online checkout
     if (userId && orderType === ORDER_TYPES.ONLINE) {
@@ -365,17 +398,44 @@ const createOrder = async ({
 
     // 9. Real-time Notification Dispatch (STRICTLY Post-commit, outside transaction)
     try {
+      // Admin notification for supermarket overview
       emitNotification({ role: 'admin' }, NOTIFICATION_TYPES.NEW_ORDER, {
         orderId: order._id,
         orderNumber: order.orderNumber,
         totalAmount: order.totalAmount,
         orderType: order.orderType,
+        customerName: order.shippingAddress?.fullName || 'Supermarket Shopper',
         timestamp: new Date().toISOString(),
       });
 
-      // Low-stock notifications dispatched strictly outside transaction
+      // Customer-targeted order confirmation (only to the customer who placed it)
+      if (userId) {
+        emitNotification({ userId: userId.toString() }, 'order_status', {
+          orderId: order._id,
+          orderNumber: order.orderNumber,
+          status: 'confirmed',
+          totalAmount: order.totalAmount,
+          title: `Order #${order.orderNumber} Confirmed`,
+          message: `Your grocery basket of ₹${order.totalAmount.toFixed(2)} is being prepared.`,
+          timestamp: new Date().toISOString(),
+        });
+      }
+
+      // Cashier lane notification for POS walk-in transactions
+      if (orderType === ORDER_TYPES.POS_WALKIN) {
+        emitNotification({ role: 'cashier' }, 'pos_completed', {
+          orderId: order._id,
+          orderNumber: order.orderNumber,
+          totalAmount: order.totalAmount,
+          invoiceNumber,
+          timestamp: new Date().toISOString(),
+        });
+      }
+
+      // Low-stock notifications dispatched strictly to Inventory Managers and Admins
       for (const alert of lowStockAlerts) {
         emitNotification({ role: 'inventory_manager' }, NOTIFICATION_TYPES.LOW_STOCK, alert);
+        emitNotification({ role: 'admin' }, NOTIFICATION_TYPES.LOW_STOCK, alert);
       }
     } catch (notifErr) {
       console.error('[Post-Commit Notification Error]:', notifErr.message);
@@ -457,7 +517,23 @@ const createOrder = async ({
         }
       }
 
-      // Clean up orphaned order and items if created in standalone mode
+      // Clean up orphaned invoice, payment, and order if created in standalone mode
+      if (savedInvoiceDoc && savedInvoiceDoc._id) {
+        try {
+          await Invoice.findByIdAndDelete(savedInvoiceDoc._id);
+        } catch (cleanInvErr) {
+          console.error('Failed compensating invoice deletion:', cleanInvErr);
+        }
+      }
+
+      if (savedPaymentDoc && savedPaymentDoc._id) {
+        try {
+          await Payment.findByIdAndDelete(savedPaymentDoc._id);
+        } catch (cleanPayErr) {
+          console.error('Failed compensating payment deletion:', cleanPayErr);
+        }
+      }
+
       if (savedOrderDoc && savedOrderDoc._id) {
         try {
           await Order.findByIdAndDelete(savedOrderDoc._id);
@@ -474,10 +550,8 @@ const createOrder = async ({
 /**
  * Get Orders for authenticated customer
  */
-const getCustomerOrders = async (userId, { page = 1, limit = 10 }) => {
-  const pageNum = parseInt(page, 10) || 1;
-  const limitNum = parseInt(limit, 10) || 10;
-  const skip = (pageNum - 1) * limitNum;
+const getCustomerOrders = async (userId, { page = 1, limit = 10 } = {}) => {
+  const { page: pageNum, limit: limitNum, skip } = parsePagination({ page, limit }, 10, 50);
 
   const [orders, total] = await Promise.all([
     Order.find({ customer: userId })
@@ -494,10 +568,14 @@ const getCustomerOrders = async (userId, { page = 1, limit = 10 }) => {
   const invoiceMap = new Map();
   invoices.forEach((inv) => invoiceMap.set(inv.order.toString(), inv));
 
-  const ordersWithInvoice = orders.map((o) => ({
-    ...o,
-    invoice: invoiceMap.get(o._id.toString()) || null,
-  }));
+  const ordersWithInvoice = orders.map((o) => {
+    const inv = invoiceMap.get(o._id.toString()) || null;
+    return {
+      ...o,
+      invoice: inv,
+      invoiceId: inv ? inv._id : null,
+    };
+  });
 
   return {
     orders: ordersWithInvoice,
@@ -505,7 +583,7 @@ const getCustomerOrders = async (userId, { page = 1, limit = 10 }) => {
       page: pageNum,
       limit: limitNum,
       total,
-      pages: Math.ceil(total / limitNum),
+      pages: Math.ceil(total / limitNum) || 1,
     },
   };
 };
@@ -524,12 +602,29 @@ const getOrderById = async (orderId, requestingUserId, requestingRole) => {
     throw AppError.notFound('Order not found');
   }
 
-  // Customers can only see their own orders
-  if (
-    requestingRole === ROLES.CUSTOMER &&
-    order.customer?._id?.toString() !== requestingUserId.toString()
-  ) {
-    throw AppError.forbidden('You are not authorized to view this order');
+  // Strict Role-Based and Ownership Authorization Policy:
+  // - Admin: Allowed access to supermarket orders
+  // - Customer: Strictly restricted to their own orders (IDOR protection)
+  // - Cashier: Strictly restricted to orders within authorized operational lane scope (POS walk-in, self-checkout, or assigned register)
+  // - Inventory Manager / others: Denied by default
+  if (requestingRole === ROLES.ADMIN) {
+    // Admin authorized
+  } else if (requestingRole === ROLES.CUSTOMER) {
+    const customerId = order.customer?._id?.toString() || order.customer?.toString();
+    if (!customerId || customerId !== requestingUserId?.toString()) {
+      throw AppError.forbidden('You are not authorized to view this order');
+    }
+  } else if (requestingRole === ROLES.CASHIER) {
+    const cashierId = order.cashier?._id?.toString() || order.cashier?.toString();
+    const isAssignedCashier = cashierId && cashierId === requestingUserId?.toString();
+    if (cashierId && !isAssignedCashier) {
+      throw AppError.forbidden('Cashiers cannot access orders processed by other cashiers');
+    }
+    if (!cashierId && order.orderType !== ORDER_TYPES.SELF_CHECKOUT) {
+      throw AppError.forbidden('Cashiers are not authorized to access orders outside their operational lane scope');
+    }
+  } else {
+    throw AppError.forbidden(`Role '${requestingRole}' is not authorized to access orders`);
   }
 
   const [invoice, payment] = await Promise.all([
@@ -547,26 +642,41 @@ const getOrderById = async (orderId, requestingUserId, requestingRole) => {
 /**
  * Get all orders across the supermarket (Admin / Cashier)
  */
-const getAllOrders = async ({
-  page = 1,
-  limit = 20,
-  status = '',
-  orderType = '',
-  search = '',
-}) => {
-  const pageNum = parseInt(page, 10) || 1;
-  const limitNum = parseInt(limit, 10) || 20;
-  const skip = (pageNum - 1) * limitNum;
+const getAllOrders = async (
+  { page = 1, limit = 20, status = '', orderType = '', search = '' } = {},
+  requestingUserId = null,
+  requestingRole = null
+) => {
+  if (requestingRole && requestingRole !== ROLES.ADMIN && requestingRole !== ROLES.CASHIER) {
+    throw AppError.forbidden(`Role '${requestingRole}' is not authorized to list supermarket orders`);
+  }
+
+  const { page: pageNum, limit: limitNum, skip } = parsePagination({ page, limit }, 20, 100);
 
   const query = {};
   if (status) query.orderStatus = status;
   if (orderType) query.orderType = orderType;
+
+  // Cashiers can only list orders within authorized operational lane scope (their own or unassigned kiosk)
+  if (requestingRole === ROLES.CASHIER) {
+    query.$or = [
+      { cashier: requestingUserId },
+      { cashier: null, orderType: ORDER_TYPES.SELF_CHECKOUT },
+    ];
+  }
+
   if (search && search.trim()) {
     const safeSearch = escapeRegex(search.trim());
-    query.$or = [
+    const searchFilter = [
       { orderNumber: { $regex: safeSearch, $options: 'i' } },
       { 'shippingAddress.fullName': { $regex: safeSearch, $options: 'i' } },
     ];
+    if (query.$or) {
+      query.$and = [{ $or: query.$or }, { $or: searchFilter }];
+      delete query.$or;
+    } else {
+      query.$or = searchFilter;
+    }
   }
 
   const [orders, total] = await Promise.all([
@@ -585,10 +695,14 @@ const getAllOrders = async ({
   const invoiceMap = new Map();
   invoices.forEach((inv) => invoiceMap.set(inv.order.toString(), inv));
 
-  const enrichedOrders = orders.map((o) => ({
-    ...o,
-    invoice: invoiceMap.get(o._id.toString()) || null,
-  }));
+  const enrichedOrders = orders.map((o) => {
+    const inv = invoiceMap.get(o._id.toString()) || null;
+    return {
+      ...o,
+      invoice: inv,
+      invoiceId: inv ? inv._id : null,
+    };
+  });
 
   return {
     orders: enrichedOrders,
@@ -596,15 +710,15 @@ const getAllOrders = async ({
       page: pageNum,
       limit: limitNum,
       total,
-      pages: Math.ceil(total / limitNum),
+      pages: Math.ceil(total / limitNum) || 1,
     },
   };
 };
 
 /**
- * Update order status (Admin)
+ * Update order status (Admin or Customer self-cancellation)
  */
-const updateOrderStatus = async (orderId, status, adminUserId, ipAddress = '') => {
+const updateOrderStatus = async (orderId, status, actingUserId, userRole = ROLES.ADMIN, ipAddress = '') => {
   if (!Object.values(ORDER_STATUS).includes(status)) {
     throw AppError.badRequest(`Invalid order status '${status}'`);
   }
@@ -615,19 +729,120 @@ const updateOrderStatus = async (orderId, status, adminUserId, ipAddress = '') =
   }
 
   const previousStatus = order.orderStatus;
+
+  // Terminal state check
+  if (previousStatus === ORDER_STATUS.CANCELLED) {
+    throw AppError.badRequest(`Cannot modify an already cancelled order (#${order.orderNumber}).`);
+  }
+
+  // Customer authorization check: customers can only cancel their own pending orders
+  if (userRole === ROLES.CUSTOMER) {
+    const isOwner = order.customer && order.customer.toString() === actingUserId.toString();
+    if (!isOwner) {
+      throw AppError.forbidden('You are not authorized to modify this order.');
+    }
+    if (order.orderStatus !== ORDER_STATUS.PENDING) {
+      throw AppError.badRequest('Orders that have already begun processing or completed cannot be cancelled by customer.');
+    }
+    if (status !== ORDER_STATUS.CANCELLED) {
+      throw AppError.forbidden('Customers are only permitted to cancel pending orders.');
+    }
+  }
+
+  // Restore inventory stock and coupons if moving to CANCELLED
+  if (status === ORDER_STATUS.CANCELLED && previousStatus !== ORDER_STATUS.CANCELLED) {
+    for (const item of order.items) {
+      const prodId = item.product?._id || item.product;
+      if (prodId) {
+        const inv = await Inventory.findOne({ productId: prodId });
+        if (inv) {
+          if (item.batchAllocations && item.batchAllocations.length > 0) {
+            for (const alloc of item.batchAllocations) {
+              const batch = inv.batches.find((b) => b.batchNumber === alloc.batchNumber);
+              if (batch) {
+                batch.quantity += alloc.deductedQty;
+              } else {
+                inv.batches.push({
+                  batchNumber: alloc.batchNumber,
+                  quantity: alloc.deductedQty,
+                  expiryDate: alloc.expiryDate || new Date(),
+                  costPrice: 0,
+                  receivedDate: new Date(),
+                });
+              }
+            }
+          } else {
+            if (inv.batches.length > 0) {
+              inv.batches[0].quantity += item.quantity;
+            } else {
+              inv.batches.push({
+                batchNumber: `RESTORED-${order.orderNumber}`,
+                quantity: item.quantity,
+                expiryDate: new Date(Date.now() + 90 * 86400000),
+                costPrice: 0,
+                receivedDate: new Date(),
+              });
+            }
+          }
+          inv.lastAuditedAt = new Date();
+          await inv.save();
+        }
+      }
+    }
+
+    // Restore coupon usage count
+    if (order.couponCode) {
+      await Discount.findOneAndUpdate(
+        { code: order.couponCode, usedCount: { $gt: 0 } },
+        { $inc: { usedCount: -1 } }
+      );
+    }
+  }
+
   order.orderStatus = status;
   await order.save();
 
   await AuditLog.create({
-    userId: adminUserId,
+    userId: actingUserId,
     action: 'ORDER_STATUS_UPDATED',
     module: AUDIT_MODULES.ORDERS,
     recordId: order._id.toString(),
     ipAddress,
     previousState: { orderStatus: previousStatus },
     newState: { orderStatus: status },
-    notes: `Order ${order.orderNumber} status changed from ${previousStatus} to ${status}`,
+    notes: `Order ${order.orderNumber} status changed from ${previousStatus} to ${status}${status === ORDER_STATUS.CANCELLED ? ' (stock restored)' : ''}`,
   });
+
+  // Emit status change notification directly to the customer
+  if (order.customer) {
+    try {
+      const custId = order.customer._id ? order.customer._id.toString() : order.customer.toString();
+      emitNotification({ userId: custId }, 'order_status', {
+        orderId: order._id,
+        orderNumber: order.orderNumber,
+        status,
+        title: `Order #${order.orderNumber} Status: ${status.toUpperCase().replace('_', ' ')}`,
+        message: `Your supermarket order fulfillment status has been updated to ${status}.`,
+        timestamp: new Date().toISOString(),
+      });
+    } catch (notifErr) {
+      console.error('[Notification Error]:', notifErr.message);
+    }
+  }
+
+  // Also notify administrative monitoring
+  try {
+    emitNotification({ role: 'admin' }, 'order_status', {
+      orderId: order._id,
+      orderNumber: order.orderNumber,
+      status,
+      title: `Order #${order.orderNumber} Fulfillment Update`,
+      message: `Status updated to ${status.toUpperCase().replace('_', ' ')}.`,
+      timestamp: new Date().toISOString(),
+    });
+  } catch (notifErr) {
+    console.error('[Notification Error]:', notifErr.message);
+  }
 
   return order;
 };

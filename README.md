@@ -1,21 +1,36 @@
-# NexCart — Intelligent Supermarket Automation System
+<div align="center">
+  <img src="frontend/public/logo.png" width="160" alt="NexCart Official Logo" />
+  <h1>NexCart — Intelligent Supermarket Automation System</h1>
+  <p><strong>Smarter Inventory • Faster Checkout • Better Shopping</strong></p>
+  <p>
+    <img src="https://img.shields.io/badge/Node.js-v18+-68a063?style=flat-square&logo=node.js&logoColor=white" alt="Node.js" />
+    <img src="https://img.shields.io/badge/Express.js-4.21-000000?style=flat-square&logo=express&logoColor=white" alt="Express.js" />
+    <img src="https://img.shields.io/badge/React-18.3-61dafb?style=flat-square&logo=react&logoColor=black" alt="React" />
+    <img src="https://img.shields.io/badge/MongoDB-7.0-47a248?style=flat-square&logo=mongodb&logoColor=white" alt="MongoDB" />
+    <img src="https://img.shields.io/badge/Vite-6.0-646cff?style=flat-square&logo=vite&logoColor=white" alt="Vite" />
+    <img src="https://img.shields.io/badge/TailwindCSS-3.4-38bdf8?style=flat-square&logo=tailwindcss&logoColor=white" alt="TailwindCSS" />
+    <img src="https://img.shields.io/badge/Tests-205%20Passed%20(100%25)-emerald?style=flat-square" alt="Tests" />
+  </p>
+</div>
 
-> *"Smarter Inventory. Faster Checkout. Better Shopping."*
+---
 
-NexCart is an academic and portfolio-quality full-stack web application designed to automate retail supermarket operations. It provides end-to-end automation for product cataloging, First-Expired First-Out (FEFO) batch inventory management, point-of-sale (POS) barcode scanning, self-checkout kiosks, digital invoice generation, dynamic clearance discounts, demand forecasting, and real-time business analytics.
+## 📌 Project Overview
+
+**NexCart** is an automated, enterprise-grade full-stack supermarket automation solution. It bridges the physical and digital retail ecosystem by integrating **Point-of-Sale (POS) cashier checkout**, **First-Expired First-Out (FEFO) multi-batch inventory depletion**, **customer self-checkout kiosks**, **digital GST tax invoices**, **algorithmic dynamic markdown clearance**, **statistical moving-average demand forecasting**, and **tamper-evident administrative compliance auditing**.
 
 ---
 
 ## 🏛 System Architecture
 
-NexCart follows a clean, decoupled **Three-Tier Architecture** adhering to separation of concerns:
+NexCart follows a decoupled, layered **Three-Tier Architecture** guaranteeing high availability, transactional consistency, and defense-in-depth security:
 
 ```
 ┌────────────────────────────────────────────────────────────────────────┐
 │                        PRESENTATION LAYER                              │
 │  React 18 + Vite | Tailwind CSS | Lucide React | Recharts | Context API│
 └───────────────────────────────────┬────────────────────────────────────┘
-                                    │ HTTP / REST / WebSockets
+                                    │ HTTPS / REST / WebSockets
 ┌───────────────────────────────────▼────────────────────────────────────┐
 │                        APPLICATION LAYER                               │
 │  Node.js + Express.js REST API (/api/v1)                               │
@@ -38,29 +53,32 @@ NexCart follows a clean, decoupled **Three-Tier Architecture** adhering to separ
 
 ---
 
-## ✨ Unique Automation Features
+## ✨ Key Enterprise Capabilities
 
-1. **Smart Stock Alert:** Automatically tracks inventory levels across all warehouse batches. When total units fall below the configured reorder level, a real-time `low_stock` event is pushed via WebSockets to inventory managers and administrators.
-2. **Expiry Monitoring (Radar):** Continuously scans all batch expiration dates and categorizes stock into urgency tiers: *Critical* (≤7 days), *Warning* (≤15 days), and *Expired* (≤0 days).
-3. **Smart Discount Recommendation:** Calculates dynamic, explainable markdown percentages (10% to 50%) for near-expiry products to accelerate inventory turnover and recover capital before perishability losses occur.
-4. **Sales Analytics:** Visualizes daily gross revenue trends, orders frequency, department/category contributions, and best-selling product leaderboards using responsive Recharts widgets.
-5. **Demand Forecast:** A transparent, explainable statistical prediction engine using 7-day Simple Moving Average (SMA) velocities and sales trend multipliers to forecast 7-day and 14-day demand, alongside recommended safety stock buffers.
-6. **Self-Checkout Kiosk Mode:** A dedicated touchscreen-optimized shopper kiosk with instant barcode scanning, basket summary, UPI/card payment simulation, and a digital exit pass verified pass.
-7. **Digital Invoice & PDF Generator:** Generates professional A4 tax invoices with full GST breakdowns (CGST/SGST), customer snapshots, line items, and store credentials, streamable on-demand as genuine PDF documents via PDFKit.
-8. **Immutable Audit Trail:** Records all administrative and operational activities (product price modifications, manual inventory stock adjustments, purchase orders, discount rules) with tamper-evident JSON state diffs (`previousState` vs `newState`).
+1. **FEFO Multi-Batch Engine:** Depletes products according to discrete expiry dates, consuming the earliest-expiring batch first. When orders are cancelled, batch stock is accurately credited back.
+2. **Smart Low-Stock Alerts:** Automatically monitors physical inventory across active batches. When total units fall below the reorder point, real-time WebSocket notifications dispatch to Inventory Managers.
+3. **Expiry Radar & Dynamic Markdowns:** Identifies batches approaching their expiration threshold (3, 7, 15, or 30 days) and recommends automated clearance markdowns (10% to 50%) to accelerate sell-through.
+4. **Touchscreen Self-Checkout Kiosk:** An express barcode scanner terminal for walk-in shoppers with instant item ringing, basket calculations, simulated tenders (Cash, Card, UPI), and digital exit passes.
+5. **High-Speed Cashier POS Lane:** Supports rapid barcode scanning, cart holding/parking with multi-customer multitasking, and cashier discount overrides guarded by HMAC manager authorizations.
+6. **Digital GST Tax Invoices:** Compiles server-side rendered A4 tax invoices with full GST breakdowns (CGST/SGST), streamable directly as genuine PDF documents via PDFKit.
+7. **Explainable Demand Forecasting:** Computes transparent 7-day Simple Moving Average (SMA) velocities and sales trend multipliers to forecast 7-day and 14-day replenishment requirements.
+8. **Procurement & Supplier Operations:** Manages supplier directories, generates procurement purchase orders, receives goods with automatic batch generation, and supports PO cancellation.
+9. **Tamper-Evident Audit Trail:** An append-only log capturing all administrative and operational activities with JSON state diffs (`previousState` vs `newState`) guarded by Mongoose immutability hooks.
+10. **Verified Customer Reviews:** Enables authenticated shoppers with verified completed purchases to rate products (1–5 stars), write comments, and manage their reviews.
 
 ---
 
 ## 👥 User Roles & Seeded Credentials
 
-NexCart supports 4 distinct user roles with full Role-Based Access Control (RBAC):
+> [!NOTE]
+> All credentials below are pre-seeded development fixtures intended strictly for local evaluation and demonstration. Production deployments provision unique credentials via administrative onboarding.
 
 | Role | Email | Password | Permissions & Scope |
 |---|---|---|---|
-| **System Admin** | `admin@nexcart.com` | `Admin@123` | Full system governance, employee oversight, executive analytics, audit logs, catalog & category management |
-| **Inventory Manager** | `inventory@nexcart.com` | `Inventory@123` | Multi-batch intake (FEFO), expiry radar, suppliers, purchase order receiving, stock adjustments |
-| **Cashier** | `cashier@nexcart.com` | `Cashier@123` | High-speed POS lane, barcode reader simulator, cart park/recall, split tender simulation, thermal receipts |
-| **Customer** | `customer@nexcart.com` | `Customer@123` | Storefront browsing, aisle filtering, cart drawer, express self-checkout, order history & PDF tax invoice downloads |
+| **System Admin** | `admin@nexcart.com` | `Admin@123` | Complete governance, employee management, executive analytics, audit logs, catalog & category controls |
+| **Inventory Manager** | `inventory@nexcart.com` | `Inventory@123` | Multi-batch intake (FEFO), expiry radar, suppliers, purchase order receiving/cancellation, stock count adjustments |
+| **Cashier** | `cashier@nexcart.com` | `Cashier@123` | High-speed POS lane, barcode reader simulator, cart park/recall, order fulfillment, tender processing |
+| **Customer** | `customer@nexcart.com` | `Customer@123` | Storefront browsing, cart drawer, express self-checkout, self-service order cancellation, invoice downloads |
 
 *(Demo Login buttons are embedded on the Login page for 1-click credential auto-fill).*
 
@@ -83,14 +101,14 @@ NexCart/
 │   ├── package.json
 │   └── .env.example
 ├── frontend/
+│   ├── public/              # Official logo, favicon, static web assets
 │   ├── src/
-│   │   ├── components/      # Common UI, Navbar, CartDrawer
-│   │   ├── context/         # AuthContext, CartContext
-│   │   ├── hooks/           # useBarcodeScanner, useSocket
+│   │   ├── components/      # Common UI, Navbar, CartDrawer, NotificationDrawer
+│   │   ├── context/         # AuthContext, CartContext, SocketContext, ThemeContext, ToastContext
 │   │   ├── pages/
-│   │   │   ├── admin/       # AdminDashboard, ProductManagement, CategoryManagement, Analytics, Discounts, Audit
+│   │   │   ├── admin/       # AdminDashboard, ProductManagement, CategoryManagement, Analytics, Discounts, Audit, UserManagement
 │   │   │   ├── cashier/     # CashierDashboard, PosTerminal (POS Lane)
-│   │   │   ├── customer/    # Storefront Catalog, SelfCheckout, Online Checkout, Order History
+│   │   │   ├── customer/    # Storefront Catalog, SelfCheckout, Online Checkout, Orders
 │   │   │   └── inventory/   # InventoryDashboard, SupplierManagement, PurchaseOrderManagement
 │   │   ├── routes/          # ProtectedRoute, RoleGuard, AppRoutes
 │   │   ├── services/        # Axios API clients
@@ -98,6 +116,7 @@ NexCart/
 │   ├── package.json
 │   └── vite.config.js
 ├── docs/                    # SRS, Architecture, Database, API, Testing, UserManual
+├── docker-compose.yml       # Production container orchestration
 └── README.md
 ```
 
@@ -106,9 +125,9 @@ NexCart/
 ## 🚀 Setup & Execution Guide
 
 ### Prerequisites
-- Node.js (v18.0 or newer)
-- MongoDB Community Server (v6.0 or newer running on `127.0.0.1:27017`)
-- npm (v9.0 or newer)
+- **Node.js**: v18.0 or newer
+- **MongoDB**: Community Server v6.0+ (running on `127.0.0.1:27017`)
+- **npm**: v9.0 or newer
 
 ### 1. Database Setup & Seeding
 ```bash
@@ -119,23 +138,23 @@ cd NexCart/backend
 # Install backend dependencies
 npm install
 
-# Configure environment
+# Configure environment variables
 cp .env.example .env
 
 # Seed initial categories, realistic products, multi-batch inventories, suppliers & users
 npm run seed
 ```
 
-### 2. Run Automated Integration Test Suite
+### 2. Run Automated Integration & Security Tests
 ```bash
-# Run the 70-test automated integration and security suite
+# Executes all 15 suites against an isolated, disposable test database (nexcart_test_db)
 npm test
 ```
 
 ### 3. Launch the Backend Server
 ```bash
 npm run dev
-# Server boots at http://localhost:5001 with WebSockets active
+# Backend API boots at http://localhost:5001 with WebSockets active
 ```
 
 ### 4. Launch the Frontend Application
@@ -147,40 +166,53 @@ npm install
 
 # Start Vite development server
 npm run dev
-# Application accessible at http://localhost:5173
+# Frontend accessible at http://localhost:5173
 ```
 
 ---
 
-## 🧪 Testing Summary
+## 🧪 Automated Testing Summary
 
-NexCart includes an automated test runner (`npm test`) executed against an isolated test database (`nexcart_test_db`):
-- **Suite 1:** System Health & MongoDB connection state
-- **Suite 2 & 2B:** Authentication, password hashing, RBAC enforcement & public registration privilege escalation prevention
-- **Suite 3:** Product catalog query, indexed B-Tree barcode lookups & product lifecycle audit logging
-- **Suite 4, 4B, 4B2 & 4C:** Multi-batch inventory tracking, expiry radar alerts, concurrent stock overselling prevention, real concurrent checkout race condition protection (2 simultaneous requests) & transactional purchase order receiving
-- **Suite 5, 5B & 5C:** Server-authoritative checkout, FEFO batch allocations, atomic coupon limits, anonymous checkout restriction (SELF_CHECKOUT only), protected PDF invoice streaming & forced checkout rollback restoring exact multi-batch allocations and coupons
-- **Suite 6:** Analytics aggregations, explainable 7-day sales velocity demand forecasting & dynamic markdowns
-- **Suite 7:** Administrative user management (staff provisioning & status toggles)
-- **Suite 8:** Verified-purchase customer reviews (strictly requiring completed orders)
-- **Suite 9:** Compliance and immutable audit trail logging with Mongoose anti-tamper hooks
-- **Suite 10:** Role-enforced order types, held-cart cashier ownership isolation, and reduced public inventory disclosure from POS scanner endpoints
+NexCart features an automated integration and security test runner (`npm test`) executed against an isolated, dedicated test database (`nexcart_test_db`):
 
-**Latest Execution Status:** `83 PASSED, 0 FAILED (100% Pass Rate)`.
+- **Suite 1:** System Health Check, Uptime & MongoDB Connection State
+- **Suite 2 & 2B:** Authentication, Bcrypt Password Hashing, RBAC Enforcement & Privilege Escalation Defenses
+- **Suite 3:** Product Catalog Queries, B-Tree Indexed Barcode Scanner Lookups & Lifecycle Audit Logging
+- **Suite 4, 4B, 4B2 & 4C:** Multi-Batch FEFO Engine, Expiry Radar Urgency Tiers, Real-Time Low-Stock Socket Alerts, Concurrent Stock Overselling Protection & Transactional Purchase Order Intake
+- **Suite 5, 5B & 5C:** Server-Authoritative POS/Self-Checkout Checkout, FEFO Batch Allocations, Atomic Coupon Usage Limits, Digital Invoice Compilation & Forced Checkout Rollbacks
+- **Suite 6:** Analytics Aggregations, Statistical Moving-Average Demand Forecasting & Dynamic Clearance Markdowns
+- **Suite 7:** Administrative User Directory Governance, Staff Provisioning & Status Toggles
+- **Suite 8:** Verified-Purchase Customer Reviews (Strictly Enforcing Completed Order Ownership)
+- **Suite 9:** Application-Level Append-Only Audit Trail with Mongoose Tamper-Evident Immutability Hooks
+- **Suite 10:** Multi-Channel Order Typing, Cashier Held-Cart Ownership Isolation & Scanner Inventory Disclosure Privacy
+- **Suite 11:** Regression Audit Guards (Physical Stock Adjustments, Auto-Inventory Provisioning, Invoice ID Linking)
+- **Suite 12:** Enterprise Access Control Matrix (Customer IDOR Protection, Role-Restricted Invoicing, Held-Cart Price Integrity)
+- **Suite 13:** Cashier Operational Scope Isolation, Cashier Discount Ceiling (≤20%), Strict Test Database Safety Guards & Restricted CORS Policies
+- **Suite 14:** Cryptographic Manager Discount Authorizations (>15%), Remote Database Protection, Pre-Checkout Stock Aggregation, Strict Pagination Clamping & 500 KB Payload DoS Hardening
+- **Suite 14L, 14M & 14N:** Order Self-Cancellation with FEFO Batch Stock Restoration, Purchase Order Cancellation & Supplier Lifecycle Deactivation
+- **Suite 14O & 14P:** REST Blueprint Endpoint Aliases, Cashier Fulfillment Status Updates, Category Taxonomy Lifecycle, Customer Review Deletion & Inactive Product Catalog Filtering
+
+**Latest Verified Test Execution Status:**
+```
+================================================================
+📊 TEST SUITE SUMMARY: 205 PASSED, 0 FAILED (100% Pass Rate)
+================================================================
+```
 
 ---
 
-## 📄 Academic Software Engineering Documentation
+## 📄 Academic & Software Engineering Documentation
 
 Comprehensive documentation adhering to IEEE standard specifications is located in the `docs/` directory:
-- [`SRS.md`](file:///Users/gourav/NexCart/docs/SRS.md): Software Requirements Specification with functional & non-functional requirements.
-- [`Architecture.md`](file:///Users/gourav/NexCart/docs/Architecture.md): Architectural patterns, UML component diagrams, deployment topologies.
-- [`Database.md`](file:///Users/gourav/NexCart/docs/Database.md): Entity-Relationship (ER) schema, collection definitions, B-tree indexes.
-- [`API.md`](file:///Users/gourav/NexCart/docs/API.md): Complete REST API endpoints catalog and request/response specifications.
-- [`Testing.md`](file:///Users/gourav/NexCart/docs/Testing.md): Verification matrix, test strategies, and automated suite reports.
-- [`UserManual.md`](file:///Users/gourav/NexCart/docs/UserManual.md): Operational manual for Administrators, Cashiers, Inventory Managers, and Customers.
+
+- [`docs/SRS.md`](file:///Users/gourav/NexCart/docs/SRS.md): Software Requirements Specification with functional & non-functional requirements.
+- [`docs/Architecture.md`](file:///Users/gourav/NexCart/docs/Architecture.md): Architectural patterns, UML component diagrams, deployment topologies.
+- [`docs/Database.md`](file:///Users/gourav/NexCart/docs/Database.md): Entity-Relationship (ER) schema, collection definitions, B-tree indexes.
+- [`docs/API.md`](file:///Users/gourav/NexCart/docs/API.md): Complete REST API endpoints catalog and request/response specifications.
+- [`docs/Testing.md`](file:///Users/gourav/NexCart/docs/Testing.md): Verification matrix, test strategies, and automated suite reports.
+- [`docs/UserManual.md`](file:///Users/gourav/NexCart/docs/UserManual.md): Operational manual for Administrators, Cashiers, Inventory Managers, and Customers.
 
 ---
 
 ## 📜 License
-This project is developed for educational and academic software engineering demonstration purposes.
+This project is developed for educational, academic, and enterprise retail automation demonstration purposes.

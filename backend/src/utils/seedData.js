@@ -128,6 +128,7 @@ const seedDatabase = async () => {
         costPrice: 48.0,
         sellingPrice: 66.0,
         taxRate: 5.0,
+        imageUrl: 'https://images.unsplash.com/photo-1550583724-b2692b85b150?auto=format&fit=crop&w=600&q=80',
         isExpiryTracked: true,
       },
       {
@@ -141,6 +142,7 @@ const seedDatabase = async () => {
         costPrice: 65.0,
         sellingPrice: 85.0,
         taxRate: 5.0,
+        imageUrl: 'https://images.unsplash.com/photo-1488477181946-6428a0291777?auto=format&fit=crop&w=600&q=80',
         isExpiryTracked: true,
       },
       {
@@ -154,6 +156,7 @@ const seedDatabase = async () => {
         costPrice: 75.0,
         sellingPrice: 95.0,
         taxRate: 0.0,
+        imageUrl: 'https://images.unsplash.com/photo-1582722872445-44dc5f7e3c8f?auto=format&fit=crop&w=600&q=80',
         isExpiryTracked: true,
       },
       {
@@ -167,6 +170,7 @@ const seedDatabase = async () => {
         costPrice: 160.0,
         sellingPrice: 220.0,
         taxRate: 5.0,
+        imageUrl: 'https://images.unsplash.com/photo-1618160702438-9b02ab6515c9?auto=format&fit=crop&w=600&q=80',
         isExpiryTracked: true,
       },
 
@@ -182,6 +186,7 @@ const seedDatabase = async () => {
         costPrice: 135.0,
         sellingPrice: 180.0,
         taxRate: 0.0,
+        imageUrl: 'https://images.unsplash.com/photo-1560806887-1e4cd0b6cbd6?auto=format&fit=crop&w=600&q=80',
         isExpiryTracked: true,
       },
       {
@@ -195,6 +200,7 @@ const seedDatabase = async () => {
         costPrice: 35.0,
         sellingPrice: 50.0,
         taxRate: 0.0,
+        imageUrl: 'https://images.unsplash.com/photo-1571771894821-ce9b6c11b08e?auto=format&fit=crop&w=600&q=80',
         isExpiryTracked: true,
       },
       {
@@ -208,6 +214,7 @@ const seedDatabase = async () => {
         costPrice: 140.0,
         sellingPrice: 190.0,
         taxRate: 0.0,
+        imageUrl: 'https://images.unsplash.com/photo-1523049673857-eb18f1d7b578?auto=format&fit=crop&w=600&q=80',
         isExpiryTracked: true,
       },
       {
@@ -221,6 +228,7 @@ const seedDatabase = async () => {
         costPrice: 28.0,
         sellingPrice: 40.0,
         taxRate: 0.0,
+        imageUrl: 'https://images.unsplash.com/photo-1576045057995-568f588f82fb?auto=format&fit=crop&w=600&q=80',
         isExpiryTracked: true,
       },
 
@@ -236,6 +244,7 @@ const seedDatabase = async () => {
         costPrice: 55.0,
         sellingPrice: 75.0,
         taxRate: 5.0,
+        imageUrl: 'https://images.unsplash.com/photo-1589367920969-ab8e050bbb04?auto=format&fit=crop&w=600&q=80',
         isExpiryTracked: true,
       },
       {
@@ -249,6 +258,7 @@ const seedDatabase = async () => {
         costPrice: 90.0,
         sellingPrice: 130.0,
         taxRate: 5.0,
+        imageUrl: 'https://images.unsplash.com/photo-1555507036-ab1f4038808a?auto=format&fit=crop&w=600&q=80',
         isExpiryTracked: true,
       },
       {
@@ -262,6 +272,7 @@ const seedDatabase = async () => {
         costPrice: 65.0,
         sellingPrice: 95.0,
         taxRate: 5.0,
+        imageUrl: 'https://images.unsplash.com/photo-1585478259715-876acc5be8eb?auto=format&fit=crop&w=600&q=80',
         isExpiryTracked: true,
       },
 
@@ -277,6 +288,7 @@ const seedDatabase = async () => {
         costPrice: 85.0,
         sellingPrice: 120.0,
         taxRate: 12.0,
+        imageUrl: 'https://images.unsplash.com/photo-1621506289937-a8e4df240d0b?auto=format&fit=crop&w=600&q=80',
         isExpiryTracked: true,
       },
       {
@@ -290,6 +302,7 @@ const seedDatabase = async () => {
         costPrice: 130.0,
         sellingPrice: 180.0,
         taxRate: 12.0,
+        imageUrl: 'https://images.unsplash.com/photo-1517701604599-bb29b565090c?auto=format&fit=crop&w=600&q=80',
         isExpiryTracked: false,
       },
       {
@@ -303,6 +316,7 @@ const seedDatabase = async () => {
         costPrice: 35.0,
         sellingPrice: 50.0,
         taxRate: 12.0,
+        imageUrl: 'https://images.unsplash.com/photo-1560512823-829485b8bf24?auto=format&fit=crop&w=600&q=80',
         isExpiryTracked: false,
       },
 
@@ -318,6 +332,7 @@ const seedDatabase = async () => {
         costPrice: 25.0,
         sellingPrice: 35.0,
         taxRate: 12.0,
+        imageUrl: 'https://images.unsplash.com/photo-1566478989037-eec170784d0b?auto=format&fit=crop&w=600&q=80',
         isExpiryTracked: false,
       },
       {
@@ -331,6 +346,7 @@ const seedDatabase = async () => {
         costPrice: 85.0,
         sellingPrice: 125.0,
         taxRate: 18.0,
+        imageUrl: 'https://images.unsplash.com/photo-1549007994-cb92caebd54b?auto=format&fit=crop&w=600&q=80',
         isExpiryTracked: false,
       },
       {
@@ -344,6 +360,7 @@ const seedDatabase = async () => {
         costPrice: 220.0,
         sellingPrice: 290.0,
         taxRate: 12.0,
+        imageUrl: 'https://images.unsplash.com/photo-1509440159596-0249088772ff?auto=format&fit=crop&w=600&q=80',
         isExpiryTracked: false,
       },
 
@@ -359,6 +376,7 @@ const seedDatabase = async () => {
         costPrice: 420.0,
         sellingPrice: 560.0,
         taxRate: 5.0,
+        imageUrl: 'https://images.unsplash.com/photo-1474979266404-7eaacbcd87c5?auto=format&fit=crop&w=600&q=80',
         isExpiryTracked: false,
       },
       {
@@ -372,6 +390,7 @@ const seedDatabase = async () => {
         costPrice: 360.0,
         sellingPrice: 480.0,
         taxRate: 0.0,
+        imageUrl: 'https://images.unsplash.com/photo-1586201375761-83865001e31c?auto=format&fit=crop&w=600&q=80',
         isExpiryTracked: false,
       },
       {
@@ -385,6 +404,7 @@ const seedDatabase = async () => {
         costPrice: 70.0,
         sellingPrice: 99.0,
         taxRate: 5.0,
+        imageUrl: 'https://images.unsplash.com/photo-1621996346565-e3d5d6281691?auto=format&fit=crop&w=600&q=80',
         isExpiryTracked: false,
       },
     ];
@@ -684,20 +704,24 @@ const seedDatabase = async () => {
     logger.info(`Seeded ${discounts.length} promotional and clearance discounts`);
 
     logger.info('✅ Successfully seeded complete Sprint 4 & Sprint 8 Inventory, Batches, Suppliers, POs & Discounts!');
-    if (require.main === module) {
-      process.exit(0);
-    }
   } catch (error) {
     logger.error('Database seeding failed:', { error: error.message, stack: error.stack });
-    if (require.main === module) {
-      process.exit(1);
-    }
     throw error;
   }
 };
 
 if (require.main === module) {
-  seedDatabase();
+  seedDatabase()
+    .then(async () => {
+      await mongoose.disconnect();
+      process.exit(0);
+    })
+    .catch(async (error) => {
+      try {
+        await mongoose.disconnect();
+      } catch (_) {}
+      process.exit(1);
+    });
 }
 
 module.exports = { seedDatabase, seedUsers, seedCategories };

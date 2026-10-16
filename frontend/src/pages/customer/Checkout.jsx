@@ -89,7 +89,9 @@ export default function Checkout() {
     setCouponError(null);
   };
 
-  const couponDiscountAmount = appliedCoupon ? appliedCoupon.calculatedDiscount : 0;
+  const couponDiscountAmount = appliedCoupon
+    ? Number(appliedCoupon.calculatedDiscount || appliedCoupon.discountAmount || 0)
+    : 0;
   const finalPayableTotal = Math.max(0, Math.round((subtotal - couponDiscountAmount + estimatedTax) * 100) / 100);
 
   const handleInputChange = (e) => {
@@ -236,7 +238,7 @@ export default function Checkout() {
                           required
                           value={shippingAddress.fullName}
                           onChange={handleInputChange}
-                          className="w-full px-3.5 py-2.5 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                          className="w-full px-3.5 py-2.5 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl text-sm text-slate-900 dark:text-white placeholder:text-slate-400 dark:placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-emerald-500"
                         />
                       </div>
 
@@ -250,7 +252,7 @@ export default function Checkout() {
                           required
                           value={shippingAddress.phone}
                           onChange={handleInputChange}
-                          className="w-full px-3.5 py-2.5 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                          className="w-full px-3.5 py-2.5 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl text-sm text-slate-900 dark:text-white placeholder:text-slate-400 dark:placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-emerald-500"
                         />
                       </div>
 
@@ -264,7 +266,7 @@ export default function Checkout() {
                           required
                           value={shippingAddress.addressLine1}
                           onChange={handleInputChange}
-                          className="w-full px-3.5 py-2.5 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                          className="w-full px-3.5 py-2.5 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl text-sm text-slate-900 dark:text-white placeholder:text-slate-400 dark:placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-emerald-500"
                         />
                       </div>
 
@@ -278,7 +280,7 @@ export default function Checkout() {
                           required
                           value={shippingAddress.city}
                           onChange={handleInputChange}
-                          className="w-full px-3.5 py-2.5 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                          className="w-full px-3.5 py-2.5 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl text-sm text-slate-900 dark:text-white placeholder:text-slate-400 dark:placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-emerald-500"
                         />
                       </div>
 
@@ -292,7 +294,7 @@ export default function Checkout() {
                           required
                           value={shippingAddress.postalCode}
                           onChange={handleInputChange}
-                          className="w-full px-3.5 py-2.5 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                          className="w-full px-3.5 py-2.5 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl text-sm text-slate-900 dark:text-white placeholder:text-slate-400 dark:placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-emerald-500"
                         />
                       </div>
                     </div>
@@ -391,7 +393,7 @@ export default function Checkout() {
                             type="text"
                             value={cardDetails.cardNumber}
                             onChange={(e) => setCardDetails({ ...cardDetails, cardNumber: e.target.value })}
-                            className="w-full px-3 py-2 text-xs bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl font-mono"
+                            className="w-full px-3 py-2 text-xs bg-white dark:bg-slate-900 text-slate-900 dark:text-white border border-slate-200 dark:border-slate-800 rounded-xl font-mono focus:outline-none focus:ring-2 focus:ring-emerald-500"
                           />
                         </div>
                         <div>
@@ -402,7 +404,7 @@ export default function Checkout() {
                             type="text"
                             value={cardDetails.expiry}
                             onChange={(e) => setCardDetails({ ...cardDetails, expiry: e.target.value })}
-                            className="w-full px-3 py-2 text-xs bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl font-mono"
+                            className="w-full px-3 py-2 text-xs bg-white dark:bg-slate-900 text-slate-900 dark:text-white border border-slate-200 dark:border-slate-800 rounded-xl font-mono focus:outline-none focus:ring-2 focus:ring-emerald-500"
                           />
                         </div>
                         <div>
@@ -413,7 +415,7 @@ export default function Checkout() {
                             type="password"
                             value={cardDetails.cvv}
                             onChange={(e) => setCardDetails({ ...cardDetails, cvv: e.target.value })}
-                            className="w-full px-3 py-2 text-xs bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl font-mono"
+                            className="w-full px-3 py-2 text-xs bg-white dark:bg-slate-900 text-slate-900 dark:text-white border border-slate-200 dark:border-slate-800 rounded-xl font-mono focus:outline-none focus:ring-2 focus:ring-emerald-500"
                           />
                         </div>
                       </div>
@@ -428,7 +430,7 @@ export default function Checkout() {
                           type="text"
                           value={upiId}
                           onChange={(e) => setUpiId(e.target.value)}
-                          className="w-full px-3 py-2 text-xs bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl font-mono"
+                          className="w-full px-3 py-2 text-xs bg-white dark:bg-slate-900 text-slate-900 dark:text-white border border-slate-200 dark:border-slate-800 rounded-xl font-mono focus:outline-none focus:ring-2 focus:ring-emerald-500"
                         />
                       </div>
                     )}
@@ -458,7 +460,7 @@ export default function Checkout() {
                           value={couponInput}
                           onChange={(e) => setCouponInput(e.target.value.toUpperCase())}
                           placeholder="e.g. WELCOME10"
-                          className="flex-1 px-3 py-2 text-xs uppercase font-mono rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 focus:outline-none focus:ring-2 focus:ring-emerald-500/20"
+                          className="flex-1 px-3 py-2 text-xs uppercase font-mono rounded-xl bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-white placeholder:text-slate-400 dark:placeholder:text-slate-500 border border-slate-200 dark:border-slate-800 focus:outline-none focus:ring-2 focus:ring-emerald-500/20"
                         />
                         <Button
                           variant="secondary"
@@ -655,14 +657,25 @@ export default function Checkout() {
 
             {/* Action Buttons */}
             <div className="flex flex-col sm:flex-row items-center justify-center gap-3 pt-2">
+              {completedOrder.invoice?._id && (
                 <Button
                   variant="primary"
                   size="md"
                   icon={Download}
-                  onClick={() => orderService.downloadInvoicePdf(completedOrder.invoice._id, completedOrder.invoice.invoiceNumber || completedOrder.order.orderNumber)}
+                  onClick={async () => {
+                    try {
+                      await orderService.downloadInvoicePdf(
+                        completedOrder.invoice._id,
+                        completedOrder.invoice.invoiceNumber || completedOrder.order.orderNumber
+                      );
+                    } catch (err) {
+                      setError(err.message || 'Could not download invoice PDF.');
+                    }
+                  }}
                 >
-                Download Invoice (PDF)
-              </Button>
+                  Download Invoice (PDF)
+                </Button>
+              )}
 
               <Button
                 variant="secondary"

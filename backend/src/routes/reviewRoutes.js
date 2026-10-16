@@ -10,4 +10,7 @@ router.get('/product/:productId', reviewController.getProductReviews);
 // Protected route to post review
 router.post('/', protect, validateReview, reviewController.addReview);
 
+// Protected route to delete review (Author or Admin)
+router.delete('/:id', protect, reviewController.deleteReview);
+
 module.exports = router;

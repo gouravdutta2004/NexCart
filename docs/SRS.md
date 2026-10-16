@@ -13,7 +13,7 @@ NexCart manages supermarket workflows across four primary actors: Customers, Cas
 - High-efficiency Cashier POS billing and customer-facing Self-Checkout terminal.
 - Deterministic Digital Invoice generation in PDF format.
 - Statistical Moving-Average Demand Forecasting.
-- Comprehensive Security, RBAC, and Immutable Audit Logging.
+- Comprehensive Security, RBAC, and Application-Level Append-Only, Tamper-Evident Audit Logging.
 
 ---
 

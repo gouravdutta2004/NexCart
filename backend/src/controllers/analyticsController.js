@@ -17,7 +17,8 @@ const getOverview = async (req, res, next) => {
 
 const getSalesTrend = async (req, res, next) => {
   try {
-    const days = parseInt(req.query.days, 10) || 7;
+    const rawDays = parseInt(req.query.days, 10);
+    const days = !isNaN(rawDays) && rawDays > 0 ? Math.min(rawDays, 90) : 7;
     const data = await analyticsService.getSalesTrend(days);
     return ApiResponse.success(res, {
       message: `Sales trend for last ${days} days retrieved`,
@@ -42,7 +43,8 @@ const getCategoryBreakdown = async (req, res, next) => {
 
 const getTopProducts = async (req, res, next) => {
   try {
-    const limit = parseInt(req.query.limit, 10) || 5;
+    const rawLimit = parseInt(req.query.limit, 10);
+    const limit = !isNaN(rawLimit) && rawLimit > 0 ? Math.min(rawLimit, 50) : 5;
     const data = await analyticsService.getTopProducts(limit);
     return ApiResponse.success(res, {
       message: 'Top-selling products retrieved',

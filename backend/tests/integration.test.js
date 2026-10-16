@@ -10,9 +10,13 @@ const mongoose = require('mongoose');
 // Ensure JWT_SECRET is present in test environment
 process.env.JWT_SECRET = process.env.JWT_SECRET || 'test_isolated_secret_key_1234567890_academic';
 const config = require('../src/config/env');
+const { validateTestDatabaseUri } = require('../src/utils/testDatabaseGuard');
+const { isOriginAllowed, getAllowedOrigins } = require('../src/config/corsHelper');
+const { initSocket, socketAuthMiddleware } = require('../src/config/socket');
 
-// Direct Mongoose to isolated test database
+// Direct Mongoose to isolated test database after strict safety validation
 const TEST_DB_URI = process.env.MONGODB_URI_TEST || 'mongodb://127.0.0.1:27017/nexcart_test_db';
+validateTestDatabaseUri(TEST_DB_URI);
 config.MONGODB_URI = TEST_DB_URI;
 
 const { app } = require('../src/server');
@@ -33,15 +37,21 @@ const TEST_PORT = 5095;
 
 function request(method, path, headers = {}, body = null) {
   return new Promise((resolve, reject) => {
+    const payload = body !== null ? (typeof body === 'string' ? body : JSON.stringify(body)) : null;
+    const reqHeaders = {
+      'Content-Type': 'application/json',
+      ...headers,
+    };
+    if (payload !== null && !reqHeaders['Content-Length'] && !reqHeaders['content-length']) {
+      reqHeaders['Content-Length'] = Buffer.byteLength(payload);
+    }
+
     const options = {
       hostname: '127.0.0.1',
       port: TEST_PORT,
       path,
       method,
-      headers: {
-        'Content-Type': 'application/json',
-        ...headers,
-      },
+      headers: reqHeaders,
     };
 
     const req = http.request(options, (res) => {
@@ -68,8 +78,8 @@ function request(method, path, headers = {}, body = null) {
     });
 
     req.on('error', reject);
-    if (body) {
-      req.write(typeof body === 'string' ? body : JSON.stringify(body));
+    if (payload !== null) {
+      req.write(payload);
     }
     req.end();
   });
@@ -94,12 +104,15 @@ async function runTestSuite() {
     }
   };
 
-  // 1. Connect to isolated test database and seed fresh fixture state
+  // 1. Strict safety check on database URI before connection and destructive cleanup
+  const safetyCheck = validateTestDatabaseUri(TEST_DB_URI);
+  console.log(`🔒 Test database safety verified: target db='${safetyCheck.dbName}' on host='${safetyCheck.hostname}'`);
   await mongoose.connect(TEST_DB_URI);
   await mongoose.connection.dropDatabase();
   await seedDatabase();
 
   const server = http.createServer(app);
+  initSocket(server);
   await new Promise((resolve) => server.listen(TEST_PORT, '127.0.0.1', resolve));
 
   try {
@@ -706,6 +719,25 @@ async function runTestSuite() {
       'Review correctly unverified when order is processing (strictly requires completed order)'
     );
 
+    // Review input validation checks (rating bounds & comment requirement)
+    const invalidRatingRes = await request('POST', '/api/v1/reviews', {
+      Authorization: `Bearer ${customerToken}`,
+    }, {
+      productId: sampleProduct._id,
+      rating: 6,
+      comment: 'Super great!',
+    });
+    assert(invalidRatingRes.statusCode === 400, 'Review with rating > 5 is rejected with HTTP 400');
+
+    const missingCommentRes = await request('POST', '/api/v1/reviews', {
+      Authorization: `Bearer ${customerToken}`,
+    }, {
+      productId: sampleProduct._id,
+      rating: 5,
+      comment: '   ',
+    });
+    assert(missingCommentRes.statusCode === 400, 'Review with empty/missing comment is rejected with HTTP 400');
+
     // ---------------------------------------------------------
     // TEST SUITE 9: Immutable Audit Trail
     // ---------------------------------------------------------
@@ -868,6 +900,1024 @@ async function runTestSuite() {
       'Authenticated cashier scan legitimately provides warehouse availableStock'
     );
 
+    // ---------------------------------------------------------
+    // TEST SUITE 11: Deep Audit Regression & Edge Case Validations
+    // ---------------------------------------------------------
+    console.log('\n--- SUITE 11: Deep Audit Regression & Edge Cases ---');
+
+    const existingCat = await Category.findOne();
+    const regressionCatId = existingCat ? existingCat._id : (await Category.create({ name: 'Regression Audit Category', slug: 'reg-audit-cat' }))._id;
+
+    // 11A: Multi-batch stock adjustment reduction math
+    const multiBatchProd = await Product.create({
+      name: 'Multi-Batch Test Ghee',
+      sku: 'TEST-GHEE-01',
+      barcode: '8901030999999',
+      sellingPrice: 500,
+      costPrice: 400,
+      categoryId: regressionCatId,
+    });
+
+    const exp1 = new Date();
+    exp1.setDate(exp1.getDate() + 30);
+    const exp2 = new Date();
+    exp2.setDate(exp2.getDate() + 60);
+
+    const mbInv = await Inventory.create({
+      productId: multiBatchProd._id,
+      totalStock: 30,
+      reorderLevel: 5,
+      optimalStock: 40,
+      batches: [
+        { batchNumber: 'GHEE-B1', quantity: 10, expiryDate: exp1, costPrice: 400 },
+        { batchNumber: 'GHEE-B2', quantity: 20, expiryDate: exp2, costPrice: 400 },
+      ],
+    });
+
+    // Reduce stock from 30 down to 5 via stock adjustment API
+    const adjustRes = await request('POST', '/api/v1/inventory/adjust', {
+      Authorization: `Bearer ${adminToken}`,
+    }, {
+      productId: multiBatchProd._id.toString(),
+      newQuantity: 5,
+      reason: 'Physical inventory cycle audit count',
+    });
+    assert(adjustRes.statusCode === 200, 'Stock adjustment API returns HTTP 200');
+
+    // Query DB directly to verify exact multi-batch reduction
+    const updatedMbInv = await Inventory.findById(mbInv._id);
+    const batchSum = updatedMbInv.batches.reduce((sum, b) => sum + b.quantity, 0);
+    assert(
+      updatedMbInv.totalStock === 5 && batchSum === 5,
+      `Multi-batch reduction accurately reduced stock to 5 units (totalStock: ${updatedMbInv.totalStock}, batchSum: ${batchSum})`
+    );
+
+    // 11B: Automatic Inventory creation on new product
+    const autoProdRes = await request('POST', '/api/v1/products', {
+      Authorization: `Bearer ${adminToken}`,
+    }, {
+      name: 'Automated Inventory Biscuit',
+      barcode: '8901030888888',
+      sku: 'AUTO-BISCUIT-01',
+      categoryId: regressionCatId.toString(),
+      costPrice: 20,
+      sellingPrice: 30,
+      taxRate: 5,
+    });
+    assert(autoProdRes.statusCode === 201, 'Admin creates product successfully with HTTP 201');
+
+    const createdProdId = autoProdRes.data?.data?.product?._id;
+    const autoInv = await Inventory.findOne({ productId: createdProdId });
+    assert(
+      autoInv !== null && autoInv.totalStock === 0,
+      'New product automatically has an initialized Inventory record with totalStock 0'
+    );
+
+    // 11C: Admin access to /my-orders
+    const adminOrdersRes = await request('GET', '/api/v1/orders/my-orders', {
+      Authorization: `Bearer ${adminToken}`,
+    });
+    assert(adminOrdersRes.statusCode === 200, 'Admin accesses /api/v1/orders/my-orders with HTTP 200');
+
+    // 11D: Customer orders return invoiceId
+    const custOrdersRes = await request('GET', '/api/v1/orders/my-orders', {
+      Authorization: `Bearer ${customerToken}`,
+    });
+    assert(custOrdersRes.statusCode === 200, 'Customer order history returns HTTP 200');
+    const firstOrder = custOrdersRes.data?.data?.[0];
+    assert(
+      firstOrder && firstOrder.invoiceId !== undefined && firstOrder.invoiceId !== null,
+      'Order history explicitly provides invoiceId for digital receipt downloading'
+    );
+
+    // ---------------------------------------------------------
+    // TEST SUITE 12: Enterprise Access Control & Held-Cart Integrity
+    // ---------------------------------------------------------
+    console.log('\n--- SUITE 12: Enterprise Access Control & Held-Cart Integrity ---');
+
+    // Setup tokens for Customer A, Customer B, Cashier, Inventory Manager, Admin
+    const custBLogin = await request('POST', '/api/v1/auth/login', {}, {
+      email: 'jane@example.com',
+      password: 'Password123!',
+    });
+    const customerBToken = custBLogin.data?.data?.token;
+
+    const invManagerLogin = await request('POST', '/api/v1/auth/login', {}, {
+      email: 'inventory@nexcart.com',
+      password: 'Inventory@123',
+    });
+    const invManagerToken = invManagerLogin.data?.data?.token;
+
+    const cashierLogin = await request('POST', '/api/v1/auth/login', {}, {
+      email: 'cashier@nexcart.com',
+      password: 'Cashier@123',
+    });
+    const mainCashierToken = cashierLogin.data?.data?.token;
+
+    // Pick an active product for testing
+    const testProduct = await Product.findOne({ isActive: true, barcode: '8901030001011' }); // Amul Milk
+
+    // 12A. Customer A creates a private online delivery order
+    const custAOrderRes = await request('POST', '/api/v1/orders', {
+      Authorization: `Bearer ${customerToken}`,
+    }, {
+      orderType: 'online',
+      items: [{ productId: testProduct._id.toString(), quantity: 1 }],
+      paymentDetails: { method: 'card' },
+      shippingAddress: {
+        fullName: 'Emily Watson',
+        addressLine1: '42 Baker Street',
+        city: 'Mumbai',
+        state: 'Maharashtra',
+        postalCode: '400001',
+      },
+    });
+    assert(custAOrderRes.statusCode === 201, 'Customer A creates online order with HTTP 201');
+    const orderAId = custAOrderRes.data?.data?.order?._id;
+    const invoiceAId = custAOrderRes.data?.data?.invoice?._id;
+    assert(orderAId && invoiceAId, 'Order A and Invoice A successfully generated');
+
+    // 12B. Order Access Control Matrix
+    // 1. Customer A reads own order -> 200
+    const readOwnOrder = await request('GET', `/api/v1/orders/${orderAId}`, {
+      Authorization: `Bearer ${customerToken}`,
+    });
+    assert(readOwnOrder.statusCode === 200, 'Customer A reads their own order with HTTP 200');
+
+    // 2. Customer B reads Customer A order -> 403 (IDOR prevention)
+    const idorOrder = await request('GET', `/api/v1/orders/${orderAId}`, {
+      Authorization: `Bearer ${customerBToken}`,
+    });
+    assert(idorOrder.statusCode === 403, 'Customer B reading Customer A order denied with HTTP 403 Forbidden (IDOR)');
+
+    // 3. Unauthenticated user reads order -> 401
+    const unauthOrder = await request('GET', `/api/v1/orders/${orderAId}`);
+    assert(unauthOrder.statusCode === 401, 'Unauthenticated user reading order rejected with HTTP 401 Unauthorized');
+
+    // 4. Inventory Manager reads order -> 403
+    const invOrder = await request('GET', `/api/v1/orders/${orderAId}`, {
+      Authorization: `Bearer ${invManagerToken}`,
+    });
+    assert(invOrder.statusCode === 403, 'Inventory Manager reading order denied with HTTP 403 Forbidden');
+
+    // 5. Cashier reads online delivery order (outside cashier lane scope) -> 403
+    const cashierOnlineOrder = await request('GET', `/api/v1/orders/${orderAId}`, {
+      Authorization: `Bearer ${mainCashierToken}`,
+    });
+    assert(cashierOnlineOrder.statusCode === 403, 'Cashier accessing online delivery order outside scope denied with HTTP 403 Forbidden');
+
+    // 6. Admin reads Customer A order -> 200
+    const adminReadOrder = await request('GET', `/api/v1/orders/${orderAId}`, {
+      Authorization: `Bearer ${adminToken}`,
+    });
+    assert(adminReadOrder.statusCode === 200, 'Admin reads Customer A order with HTTP 200');
+
+    // 7. Cashier creates and reads authorized POS walk-in order -> 200
+    const cashierPosOrder = await request('POST', '/api/v1/orders', {
+      Authorization: `Bearer ${mainCashierToken}`,
+    }, {
+      orderType: 'pos_walkin',
+      items: [{ productId: testProduct._id.toString(), quantity: 1 }],
+      paymentDetails: { method: 'cash', tenderDetails: { cashTendered: 100 } },
+    });
+    assert(cashierPosOrder.statusCode === 201, 'Cashier processes POS walk-in order with HTTP 201');
+    const posOrderId = cashierPosOrder.data?.data?.order?._id;
+    const posInvoiceId = cashierPosOrder.data?.data?.invoice?._id;
+
+    const cashierReadsPos = await request('GET', `/api/v1/orders/${posOrderId}`, {
+      Authorization: `Bearer ${mainCashierToken}`,
+    });
+    assert(cashierReadsPos.statusCode === 200, 'Cashier accesses authorized POS walk-in order with HTTP 200');
+
+    // 12C. Invoice Access Control Matrix
+    // 1. Customer A reads own invoice by ID -> 200
+    const custOwnInvoice = await request('GET', `/api/v1/invoices/${invoiceAId}`, {
+      Authorization: `Bearer ${customerToken}`,
+    });
+    assert(custOwnInvoice.statusCode === 200, 'Customer A accesses own invoice metadata with HTTP 200');
+
+    // 2. Customer A reads own invoice by Order ID -> 200
+    const custOwnInvoiceByOrder = await request('GET', `/api/v1/invoices/order/${orderAId}`, {
+      Authorization: `Bearer ${customerToken}`,
+    });
+    assert(custOwnInvoiceByOrder.statusCode === 200, 'Customer A accesses invoice by Order ID with HTTP 200');
+
+    // 3. Customer B reads Customer A invoice -> 403
+    const idorInvoice = await request('GET', `/api/v1/invoices/${invoiceAId}`, {
+      Authorization: `Bearer ${customerBToken}`,
+    });
+    assert(idorInvoice.statusCode === 403, 'Customer B accessing Customer A invoice denied with HTTP 403 Forbidden');
+
+    // 4. Customer B reads Customer A invoice by order ID -> 403
+    const idorInvoiceByOrder = await request('GET', `/api/v1/invoices/order/${orderAId}`, {
+      Authorization: `Bearer ${customerBToken}`,
+    });
+    assert(idorInvoiceByOrder.statusCode === 403, 'Customer B accessing Customer A invoice by order ID denied with HTTP 403 Forbidden');
+
+    // 5. Unauthenticated user downloads invoice PDF -> 401
+    const unauthPdf = await request('GET', `/api/v1/invoices/${invoiceAId}/pdf`);
+    assert(unauthPdf.statusCode === 401, 'Unauthenticated PDF request denied with HTTP 401 Unauthorized');
+
+    // 6. Inventory Manager requests invoice metadata -> 403
+    const invInvoice = await request('GET', `/api/v1/invoices/${invoiceAId}`, {
+      Authorization: `Bearer ${invManagerToken}`,
+    });
+    assert(invInvoice.statusCode === 403, 'Inventory Manager accessing invoice metadata denied with HTTP 403 Forbidden');
+
+    // 7. Inventory Manager requests invoice PDF -> 403
+    const invPdf = await request('GET', `/api/v1/invoices/${invoiceAId}/pdf`, {
+      Authorization: `Bearer ${invManagerToken}`,
+    });
+    assert(invPdf.statusCode === 403, 'Inventory Manager requesting invoice PDF denied with HTTP 403 Forbidden');
+
+    // 8. Cashier requests Customer A online order PDF -> 403
+    const cashierOnlinePdf = await request('GET', `/api/v1/invoices/${invoiceAId}/pdf`, {
+      Authorization: `Bearer ${mainCashierToken}`,
+    });
+    assert(cashierOnlinePdf.statusCode === 403, 'Cashier accessing online delivery invoice PDF denied with HTTP 403 Forbidden');
+
+    // 9. Cashier requests POS walk-in invoice PDF -> 200
+    const cashierPosPdf = await request('GET', `/api/v1/invoices/${posInvoiceId}/pdf`, {
+      Authorization: `Bearer ${mainCashierToken}`,
+    });
+    assert(cashierPosPdf.statusCode === 200, 'Cashier downloads authorized POS walk-in invoice PDF with HTTP 200');
+
+    // 10. Admin downloads any invoice PDF -> 200
+    const adminPdf = await request('GET', `/api/v1/invoices/${invoiceAId}/pdf`, {
+      Authorization: `Bearer ${adminToken}`,
+    });
+    assert(adminPdf.statusCode === 200, 'Admin downloads invoice PDF with HTTP 200');
+
+    // 12D. Secure Public POS Validation
+    // 1. Anonymous validation with excess stock -> 400
+    const anonExcessVal = await request('POST', '/api/v1/pos/validate', {}, {
+      items: [{ productId: testProduct._id.toString(), quantity: 99999 }],
+    });
+    assert(anonExcessVal.statusCode === 400, 'Public validation with excess stock returns HTTP 400 Bad Request');
+    const anonErrBody = JSON.stringify(anonExcessVal.data || '');
+    assert(
+      !anonErrBody.includes('Available: ') && !anonErrBody.includes('availableStock'),
+      'Public validation strictly DOES NOT expose exact inventory counts or batch details'
+    );
+    assert(
+      anonExcessVal.data?.message?.includes('unavailable or have insufficient stock') ||
+      anonExcessVal.data?.errors?.[0]?.includes('Insufficient stock available'),
+      'Public validation provides user-safe guidance message'
+    );
+
+    // 2. Staff validation with excess stock -> 400 with diagnostic stock details
+    const staffExcessVal = await request('POST', '/api/v1/pos/validate', {
+      Authorization: `Bearer ${mainCashierToken}`,
+    }, {
+      items: [{ productId: testProduct._id.toString(), quantity: 99999 }],
+    });
+    assert(staffExcessVal.statusCode === 400, 'Staff validation returns HTTP 400 Bad Request');
+    const staffErrBody = JSON.stringify(staffExcessVal.data || '');
+    assert(staffErrBody.includes('Available: '), 'Staff validation legitimately provides detailed warehouse inventory count');
+
+    // 3. Legitimate self-checkout validation -> 200
+    const validCheckoutVal = await request('POST', '/api/v1/pos/validate', {}, {
+      items: [{ productId: testProduct._id.toString(), quantity: 1 }],
+    });
+    assert(validCheckoutVal.statusCode === 200, 'Valid pre-checkout items pass validation with HTTP 200');
+    assert(validCheckoutVal.data?.data?.isValid === true, 'Validation confirms isValid=true for self-checkout kiosk');
+
+    // 12E. Held-Cart Price Integrity
+    // 1. Client submits manipulated low unitPrice (₹1 instead of ₹66)
+    const tamperedHold = await request('POST', '/api/v1/pos/hold', {
+      Authorization: `Bearer ${mainCashierToken}`,
+    }, {
+      items: [{
+        productId: testProduct._id.toString(),
+        quantity: 2,
+        unitPrice: 1.00, // Client tries to spoof ₹1.00
+        discount: 0,
+      }],
+      customerName: 'Tamper Test',
+    });
+    assert(tamperedHold.statusCode === 201, 'Cashier holds cart successfully with HTTP 201');
+    const heldCartDoc = tamperedHold.data?.data?.heldCart;
+    const authoritativeUnit = Number(testProduct.sellingPrice);
+    const expectedSubtotal = Number((authoritativeUnit * 2).toFixed(2));
+    assert(
+      heldCartDoc?.items?.[0]?.unitPrice === authoritativeUnit,
+      `Held cart enforces authoritative server unitPrice (₹${authoritativeUnit}) ignoring client tampered price (₹1.00)`
+    );
+    assert(
+      heldCartDoc?.subtotal === expectedSubtotal,
+      `Held cart calculates server-authoritative subtotal (₹${expectedSubtotal})`
+    );
+
+    // 2. Client submits invalid/excessive discount -> 400
+    const excessiveDiscHold = await request('POST', '/api/v1/pos/hold', {
+      Authorization: `Bearer ${mainCashierToken}`,
+    }, {
+      items: [{
+        productId: testProduct._id.toString(),
+        quantity: 1,
+        discount: 99999, // Exceeds line gross
+      }],
+    });
+    assert(excessiveDiscHold.statusCode === 400, 'Held cart with excessive discount rejected with HTTP 400 Bad Request');
+
+    // 3. Price changes while cart is held -> Recalled cart updates to new catalog price
+    const initialPrice = Number(testProduct.sellingPrice);
+    const cartToRecallId = heldCartDoc._id;
+    // Admin updates product selling price
+    await Product.findByIdAndUpdate(testProduct._id, { sellingPrice: initialPrice + 10 });
+
+    const recalledCartRes = await request('DELETE', `/api/v1/pos/held/${cartToRecallId}`, {
+      Authorization: `Bearer ${mainCashierToken}`,
+    });
+    assert(recalledCartRes.statusCode === 200, 'Cashier recalls held cart with HTTP 200');
+    const recalledData = recalledCartRes.data?.data?.recalledCart;
+    assert(
+      recalledData?.items?.[0]?.unitPrice === initialPrice + 10,
+      `Recalled cart dynamically updates unitPrice to new catalog price (₹${initialPrice + 10})`
+    );
+    assert(
+      recalledData?.priceChangedAlert === true,
+      'Recalled cart flags priceChangedAlert to notify cashier of catalog adjustment'
+    );
+
+    // Restore original price
+    await Product.findByIdAndUpdate(testProduct._id, { sellingPrice: initialPrice });
+
+    // 4. Cart recalled and checked out creates order with authoritative values
+    const finalOrderRes = await request('POST', '/api/v1/orders', {
+      Authorization: `Bearer ${mainCashierToken}`,
+    }, {
+      orderType: 'pos_walkin',
+      items: [{
+        productId: testProduct._id.toString(),
+        quantity: 1,
+        unitPrice: 0.01, // Tampered price in checkout payload
+      }],
+      paymentDetails: { method: 'cash', tenderDetails: { cashTendered: 100 } },
+    });
+    assert(finalOrderRes.statusCode === 201, 'Order created from held/POS checkout with HTTP 201');
+    const finalOrder = finalOrderRes.data?.data?.order;
+    assert(
+      finalOrder?.items?.[0]?.unitPrice === initialPrice,
+      `Order checkout strictly enforces authoritative server unitPrice (₹${initialPrice}) ignoring client tampered price (₹0.01)`
+    );
+
+    // ---------------------------------------------------------
+    // TEST SUITE 13: Cashier Scope Isolation, Cart Aggregation, Test DB Safety & Strict CORS
+    // ---------------------------------------------------------
+    console.log('\n--- SUITE 13: Cashier Scope Isolation, Cart Aggregation, Test DB Safety & Strict CORS ---');
+
+    // 13A. Cashier-to-Cashier Isolation
+    let cashierB = await User.findOne({ email: 'cashier2@nexcart.com' });
+    if (!cashierB) {
+      cashierB = await User.create({
+        name: 'Suresh Patel (Cashier B)',
+        email: 'cashier2@nexcart.com',
+        password: 'Cashier@456',
+        role: 'cashier',
+        phone: '+91 98201 09999',
+        status: 'active',
+      });
+    }
+
+    const cashierBLogin = await request('POST', '/api/v1/auth/login', {}, {
+      email: 'cashier2@nexcart.com',
+      password: 'Cashier@456',
+    });
+    assert(cashierBLogin.statusCode === 200, 'Cashier B login succeeds with HTTP 200');
+    const cashierBToken = cashierBLogin.data?.data?.token;
+
+    // Cashier A processed order `posOrderId` and invoice `posInvoiceId`
+    // 1. Cashier B tries to view Cashier A's order by ID -> 403
+    const cashierBCrossOrder = await request('GET', `/api/v1/orders/${posOrderId}`, {
+      Authorization: `Bearer ${cashierBToken}`,
+    });
+    assert(cashierBCrossOrder.statusCode === 403, 'Cashier B cannot read Cashier A order by ID (HTTP 403 Forbidden)');
+    assert(
+      cashierBCrossOrder.data?.message?.includes('Cashiers cannot access orders processed by other cashiers'),
+      'Cashier B receives explicit isolation error message'
+    );
+
+    // 2. Cashier B lists orders -> must not contain Cashier A's order
+    const cashierBOrderList = await request('GET', '/api/v1/orders', {
+      Authorization: `Bearer ${cashierBToken}`,
+    });
+    assert(cashierBOrderList.statusCode === 200, 'Cashier B lists orders with HTTP 200');
+    const listedOrderIds = (cashierBOrderList.data?.data || []).map((o) => o._id?.toString());
+    assert(
+      !listedOrderIds.includes(posOrderId.toString()),
+      'Cashier B order list strictly excludes orders processed by Cashier A'
+    );
+
+    // 3. Cashier B tries to view Cashier A's invoice metadata by ID -> 403
+    const cashierBCrossInvoice = await request('GET', `/api/v1/invoices/${posInvoiceId}`, {
+      Authorization: `Bearer ${cashierBToken}`,
+    });
+    assert(cashierBCrossInvoice.statusCode === 403, 'Cashier B cannot read Cashier A invoice metadata (HTTP 403 Forbidden)');
+
+    // 4. Cashier B tries to download Cashier A's invoice PDF -> 403
+    const cashierBCrossPdf = await request('GET', `/api/v1/invoices/${posInvoiceId}/pdf`, {
+      Authorization: `Bearer ${cashierBToken}`,
+    });
+    assert(cashierBCrossPdf.statusCode === 403, 'Cashier B cannot download Cashier A invoice PDF (HTTP 403 Forbidden)');
+
+    // 13B. Duplicate Held-Cart Lines Aggregation & Stock Validation
+    const testInvDoc = await Inventory.findOne({ productId: testProduct._id });
+    const originalStock = testInvDoc.totalStock;
+    await Inventory.updateOne({ productId: testProduct._id }, { $set: { totalStock: 5 } });
+
+    // Client sends held-cart with 2 identical line items of quantity 3 (total 6 > available 5)
+    const duplicateLinesExcessHold = await request('POST', '/api/v1/pos/hold', {
+      Authorization: `Bearer ${mainCashierToken}`,
+    }, {
+      items: [
+        { productId: testProduct._id.toString(), quantity: 3, discount: 0 },
+        { productId: testProduct._id.toString(), quantity: 3, discount: 0 },
+      ],
+      customerName: 'Duplicate Lines Aggregation Test',
+    });
+    assert(
+      duplicateLinesExcessHold.statusCode === 400,
+      'Held cart combining duplicate product IDs exceeding stock is rejected with HTTP 400 Bad Request'
+    );
+    assert(
+      duplicateLinesExcessHold.data?.message?.includes('Insufficient stock'),
+      'Aggregated duplicate lines stock validation returns informative insufficient stock message'
+    );
+
+    // Restore original stock
+    await Inventory.updateOne({ productId: testProduct._id }, { $set: { totalStock: originalStock } });
+
+    // 13C. Unauthorized Discretionary Discount (> 20% limit for cashier)
+    const unauthorizedDiscountHold = await request('POST', '/api/v1/pos/hold', {
+      Authorization: `Bearer ${mainCashierToken}`,
+    }, {
+      items: [
+        {
+          productId: testProduct._id.toString(),
+          quantity: 1,
+          discount: Number((testProduct.sellingPrice * 0.35).toFixed(2)), // 35% discount (exceeds 20% cap)
+        },
+      ],
+      customerName: 'Excessive Discount Test',
+    });
+    assert(
+      unauthorizedDiscountHold.statusCode === 400,
+      'Cashier held cart with discount exceeding 20% is rejected with HTTP 400 Bad Request'
+    );
+    assert(
+      unauthorizedDiscountHold.data?.message?.includes('Unauthorized discount: Cashier role is not permitted to apply discounts exceeding 20%'),
+      'Cashier discount cap error message explicitly indicates 20% ceiling'
+    );
+
+    // 13D. Test Database Safety Guard Unit Verification
+    let devDbBlocked = false;
+    try {
+      validateTestDatabaseUri('mongodb://127.0.0.1:27017/nexcart_db');
+    } catch (e) {
+      devDbBlocked = e.message.includes('standard or development database');
+    }
+    assert(devDbBlocked, 'validateTestDatabaseUri strictly refuses dev database nexcart_db');
+
+    let prodHostBlocked = false;
+    try {
+      validateTestDatabaseUri('mongodb://prod-cluster.internal:27017/nexcart_test');
+    } catch (e) {
+      prodHostBlocked = e.message.includes('production environment');
+    }
+    assert(prodHostBlocked, 'validateTestDatabaseUri strictly refuses production hostname');
+
+    let nonTestDbBlocked = false;
+    let misleadingDbBlocked = false;
+    try {
+      validateTestDatabaseUri('mongodb://127.0.0.1:27017/my_custom_db');
+    } catch (e) {
+      nonTestDbBlocked = e.message.includes("does not contain 'test'");
+    }
+    try {
+      validateTestDatabaseUri('mongodb://127.0.0.1:27017/latest_orders');
+    } catch (e) {
+      misleadingDbBlocked = true;
+    }
+    try {
+      validateTestDatabaseUri('mongodb://127.0.0.1:27017/staging_test_db');
+    } catch (e) {
+      misleadingDbBlocked = misleadingDbBlocked && true;
+    }
+    try {
+      validateTestDatabaseUri('mongodb://127.0.0.1:27017/protest_db');
+    } catch (e) {
+      misleadingDbBlocked = misleadingDbBlocked && true;
+    }
+    try {
+      validateTestDatabaseUri('mongodb://127.0.0.1:27017/backup_test');
+    } catch (e) {
+      misleadingDbBlocked = misleadingDbBlocked && true;
+    }
+    assert(
+      nonTestDbBlocked && misleadingDbBlocked,
+      'validateTestDatabaseUri strictly refuses non-test names, misleading substrings (latest, protest), and staging/backup environments'
+    );
+
+    const validTestSafety = validateTestDatabaseUri(TEST_DB_URI);
+    assert(validTestSafety.isSafe === true, `validateTestDatabaseUri confirms safe test DB: ${validTestSafety.dbName}`);
+
+    // 13E. Strict CORS Origin Policy & Socket.IO Authentication Verification
+    const unauthorizedCorsRes = await request('OPTIONS', '/api/v1/products', {
+      Origin: 'https://attacker.vercel.app',
+      'Access-Control-Request-Method': 'GET',
+    });
+    assert(
+      !unauthorizedCorsRes.headers['access-control-allow-origin'] ||
+      unauthorizedCorsRes.headers['access-control-allow-origin'] !== 'https://attacker.vercel.app',
+      'CORS preflight from wildcard subdomain https://attacker.vercel.app is rejected'
+    );
+
+    assert(isOriginAllowed('https://malicious-site.onrender.com') === false, 'isOriginAllowed rejects .onrender.com wildcards');
+    assert(isOriginAllowed('https://phishing.netlify.app') === false, 'isOriginAllowed rejects .netlify.app wildcards');
+    assert(isOriginAllowed('http://localhost:5173') === true, 'isOriginAllowed accepts configured local Vite port 5173');
+
+    // Socket.IO Connection Authentication & Active User Attachment Verification
+    let unauthSocketError = null;
+    await socketAuthMiddleware({ handshake: { auth: {}, headers: {}, query: {} } }, (err) => {
+      unauthSocketError = err;
+    });
+
+    let authSocketUser = null;
+    const fakeSocket = {
+      handshake: { auth: { token: adminToken }, headers: {}, query: {} },
+    };
+    await socketAuthMiddleware(fakeSocket, (err) => {
+      if (!err) authSocketUser = fakeSocket.user;
+    });
+
+    assert(
+      unauthSocketError?.message?.includes('Token required') && authSocketUser?.role === 'admin',
+      'Socket.IO rejects unauthenticated connections (Token required) and attaches authenticated active user session'
+    );
+
+    // ---------------------------------------------------------
+    // TEST SUITE 14: Standardized Discount Authorization, Safety Guards, Pagination & DoS Protection
+    // ---------------------------------------------------------
+    console.log('\n--- SUITE 14: Standardized Discount Authorization, Safety Guards, Pagination & DoS Protection ---');
+
+    // 14A. Remote Database Guard Verification
+    let remoteHostBlocked = false;
+    try {
+      validateTestDatabaseUri('mongodb://atlas-remote-cluster.mongodb.net:27017/nexcart_test_db');
+    } catch (e) {
+      remoteHostBlocked = e.message.includes('is remote') && e.message.includes('remote clusters is forbidden');
+    }
+    assert(remoteHostBlocked, 'validateTestDatabaseUri strictly blocks remote Atlas cluster test database without override');
+
+    // With ALLOW_REMOTE_TEST_DB override, remote test database is allowed
+    process.env.ALLOW_REMOTE_TEST_DB = 'true';
+    let remoteAllowed = false;
+    try {
+      const remoteRes = validateTestDatabaseUri('mongodb://remote-test-server.example.com:27017/nexcart_test_db');
+      remoteAllowed = remoteRes.isSafe === true;
+    } catch (e) {
+      remoteAllowed = false;
+    }
+    delete process.env.ALLOW_REMOTE_TEST_DB;
+    assert(remoteAllowed, 'validateTestDatabaseUri permits remote test host only when ALLOW_REMOTE_TEST_DB=true');
+
+    // 14B. Malformed URI Guard Verification
+    let emptyUriBlocked = false;
+    try {
+      validateTestDatabaseUri('');
+    } catch (e) {
+      emptyUriBlocked = e.message.includes('Missing or invalid database URI');
+    }
+    assert(emptyUriBlocked, 'validateTestDatabaseUri rejects empty URI');
+
+    let badProtocolBlocked = false;
+    try {
+      validateTestDatabaseUri('http://127.0.0.1:27017/nexcart_test_db');
+    } catch (e) {
+      badProtocolBlocked = e.message.includes('Invalid protocol in database URI');
+    }
+    assert(badProtocolBlocked, 'validateTestDatabaseUri rejects non-mongodb protocol (http://)');
+
+    let missingDbBlocked = false;
+    try {
+      validateTestDatabaseUri('mongodb://127.0.0.1:27017/');
+    } catch (e) {
+      missingDbBlocked = e.message.includes('does not specify an explicit database name');
+    }
+    assert(missingDbBlocked, 'validateTestDatabaseUri rejects URI with missing database name');
+
+    // 14C. Checkout Discount Authorization: Customer Attempting POS Walk-in Spoil/Discounts Blocked
+    const customerSpoofPosWalkin = await request('POST', '/api/v1/orders', {
+      Authorization: `Bearer ${customerToken}`,
+    }, {
+      orderType: 'pos_walkin',
+      items: [{
+        productId: testProduct._id.toString(),
+        quantity: 1,
+        discount: 10,
+      }],
+      paymentDetails: { method: 'card' },
+    });
+    assert(
+      customerSpoofPosWalkin.statusCode === 403,
+      'Customer attempting POS walk-in order is rejected with HTTP 403 Forbidden'
+    );
+    assert(
+      customerSpoofPosWalkin.data?.message?.includes('Customers cannot create POS walk-in orders'),
+      'Customer POS spoof error confirms POS orders must be placed through an authorized cashier'
+    );
+
+    // Customer online order ignores client-injected discountAmount and enforces server pricing
+    const customerOnlineTamper = await request('POST', '/api/v1/orders', {
+      Authorization: `Bearer ${customerToken}`,
+    }, {
+      orderType: 'online',
+      items: [{
+        productId: testProduct._id.toString(),
+        quantity: 1,
+        discount: 50, // Ignored by server
+      }],
+      paymentDetails: { method: 'card' },
+      shippingAddress: { fullName: 'Customer Disc', addressLine1: 'Lane 1', city: 'Mumbai', postalCode: '400001' },
+    });
+    assert(
+      customerOnlineTamper.statusCode === 201,
+      'Customer online order with attempted client line discount succeeds with HTTP 201 Created under server pricing'
+    );
+    assert(
+      customerOnlineTamper.data?.data?.order?.discountTotal === 0,
+      'Customer online order ignores client-injected line discount (discountTotal = ₹0)'
+    );
+
+    // 14D. Checkout Discount Authorization: Cashier Exceeding 20% Cap Blocked Without Override
+    const cashierExcessDiscount = await request('POST', '/api/v1/orders', {
+      Authorization: `Bearer ${mainCashierToken}`,
+    }, {
+      orderType: 'pos_walkin',
+      items: [{
+        productId: testProduct._id.toString(),
+        quantity: 1,
+        discount: Number((testProduct.sellingPrice * 0.30).toFixed(2)), // 30% discount (> 20% cap)
+      }],
+      paymentDetails: { method: 'cash', tenderDetails: { cashTendered: 200 } },
+    });
+    assert(
+      cashierExcessDiscount.statusCode === 400,
+      'Cashier checkout with discount > 20% is rejected with HTTP 400 Bad Request'
+    );
+    assert(
+      cashierExcessDiscount.data?.message?.includes('Cashier role is not permitted to apply discounts exceeding 20%'),
+      'Cashier checkout discount error explicitly states 20% ceiling'
+    );
+
+    // 14E. Checkout Discount Authorization: Forged Override Blocked & Cryptographically Verified Manager Override Allowed
+    const forgedOverrideDiscount = await request('POST', '/api/v1/orders', {
+      Authorization: `Bearer ${mainCashierToken}`,
+    }, {
+      orderType: 'pos_walkin',
+      items: [{
+        productId: testProduct._id.toString(),
+        quantity: 1,
+        discount: Number((testProduct.sellingPrice * 0.30).toFixed(2)),
+      }],
+      managerOverride: { approved: true, authorizedBy: 'Store Manager (Admin)' }, // Forged without cryptographic token
+      paymentDetails: { method: 'cash', tenderDetails: { cashTendered: 200 } },
+    });
+
+    const cashierOverrideDiscount = await request('POST', '/api/v1/orders', {
+      Authorization: `Bearer ${mainCashierToken}`,
+    }, {
+      orderType: 'pos_walkin',
+      items: [{
+        productId: testProduct._id.toString(),
+        quantity: 1,
+        discount: Number((testProduct.sellingPrice * 0.30).toFixed(2)), // 30% discount
+      }],
+      managerOverride: { token: adminToken }, // Genuine cryptographically signed manager token
+      paymentDetails: { method: 'cash', tenderDetails: { cashTendered: 200 } },
+    });
+    assert(
+      forgedOverrideDiscount.statusCode === 403 && cashierOverrideDiscount.statusCode === 201,
+      'Forged manager override is strictly rejected with HTTP 403, while cryptographically verified token succeeds with HTTP 201'
+    );
+    const expectedLineDiscount = Number((testProduct.sellingPrice * 0.30).toFixed(2));
+    assert(
+      cashierOverrideDiscount.data?.data?.order?.discountTotal === expectedLineDiscount,
+      `Order discountTotal (₹${cashierOverrideDiscount.data?.data?.order?.discountTotal}) accurately matches approved override discount (₹${expectedLineDiscount})`
+    );
+
+    // 14F. Checkout Discount Authorization: Admin Discretionary Discount Allowed Without Override
+    const adminDiscountOrder = await request('POST', '/api/v1/orders', {
+      Authorization: `Bearer ${adminToken}`,
+    }, {
+      orderType: 'pos_walkin',
+      items: [{
+        productId: testProduct._id.toString(),
+        quantity: 1,
+        discount: Number((testProduct.sellingPrice * 0.40).toFixed(2)), // 40% discount
+      }],
+      paymentDetails: { method: 'cash', tenderDetails: { cashTendered: 200 } },
+    });
+    assert(
+      adminDiscountOrder.statusCode === 201,
+      'Admin checkout with discount > 20% succeeds with HTTP 201 Created by administrative privilege'
+    );
+
+    // 14G. Pre-checkout Duplicate Line Items Aggregation Validation
+    const initialTestStock = (await Inventory.findOne({ productId: testProduct._id })).totalStock;
+    await Inventory.updateOne({ productId: testProduct._id }, { $set: { totalStock: 4 } });
+
+    const preCheckoutDuplicateExcess = await request('POST', '/api/v1/pos/validate', {
+      Authorization: `Bearer ${mainCashierToken}`,
+    }, {
+      items: [
+        { productId: testProduct._id.toString(), quantity: 3 },
+        { productId: testProduct._id.toString(), quantity: 3 },
+      ],
+    });
+    assert(
+      preCheckoutDuplicateExcess.statusCode === 400,
+      'Pre-checkout validation combining duplicate line items (qty 3+3=6 vs stock 4) is rejected with HTTP 400'
+    );
+    assert(
+      preCheckoutDuplicateExcess.data?.message?.includes('Checkout validation failed'),
+      'Staff pre-checkout validation returns standard validation failure message'
+    );
+
+    await Inventory.updateOne({ productId: testProduct._id }, { $set: { totalStock: initialTestStock } });
+
+    // 14H. Safe Pagination Input Handling Across Endpoints
+    const safeOrdersPagination = await request('GET', '/api/v1/orders/my-orders?page=-5&limit=-20', {
+      Authorization: `Bearer ${customerToken}`,
+    });
+    assert(safeOrdersPagination.statusCode === 200, 'Negative pagination parameters handled gracefully with HTTP 200');
+    assert(
+      safeOrdersPagination.data?.meta?.page === 1 && safeOrdersPagination.data?.meta?.limit === 10,
+      `Negative page/limit safely defaults to page=1, limit=10 (received page=${safeOrdersPagination.data?.meta?.page}, limit=${safeOrdersPagination.data?.meta?.limit})`
+    );
+
+    const safeUsersPagination = await request('GET', '/api/v1/users?page=-1&limit=9999', {
+      Authorization: `Bearer ${adminToken}`,
+    });
+    assert(safeUsersPagination.statusCode === 200, 'Admin users list with extreme pagination returns HTTP 200');
+    assert(
+      safeUsersPagination.data?.meta?.page === 1 && safeUsersPagination.data?.meta?.limit === 100,
+      `Extreme limit is safely clamped to maximum bound of 100 (received limit=${safeUsersPagination.data?.meta?.limit})`
+    );
+
+    const safeAnalyticsPagination = await request('GET', '/api/v1/analytics/top-products?limit=-10', {
+      Authorization: `Bearer ${adminToken}`,
+    });
+    assert(safeAnalyticsPagination.statusCode === 200, 'Analytics top-products handles negative limit with HTTP 200');
+
+    // 14I. Request Body Size Limit Hardening (500 KB DoS Protection)
+    const largePayload = {
+      items: [{ productId: testProduct._id.toString(), quantity: 1 }],
+      notes: 'X'.repeat(600 * 1024), // 600 KB payload (> 500 KB limit)
+    };
+    const payloadTooLargeRes = await request('POST', '/api/v1/pos/validate', {
+      Authorization: `Bearer ${mainCashierToken}`,
+    }, largePayload);
+    assert(
+      payloadTooLargeRes.statusCode === 413,
+      'Payload exceeding 500 KB is rejected with HTTP 413 Payload Too Large'
+    );
+
+    // 14J. Promotional Discount Boundary Checks
+    const negativeDiscountRes = await request('POST', '/api/v1/discounts', {
+      Authorization: `Bearer ${adminToken}`,
+    }, {
+      code: 'NEGDISC',
+      title: 'Negative Discount Test',
+      discountType: 'percentage',
+      discountValue: -15,
+      endDate: new Date(Date.now() + 86400000).toISOString(),
+    });
+    assert(negativeDiscountRes.statusCode === 400, 'Discount creation with negative value is rejected with HTTP 400');
+
+    const excessivePercentDiscountRes = await request('POST', '/api/v1/discounts', {
+      Authorization: `Bearer ${adminToken}`,
+    }, {
+      code: 'EXCESS150',
+      title: 'Excessive 150% Discount Test',
+      discountType: 'percentage',
+      discountValue: 150,
+      endDate: new Date(Date.now() + 86400000).toISOString(),
+    });
+    assert(excessivePercentDiscountRes.statusCode === 400, 'Discount creation with percentage > 100% is rejected with HTTP 400');
+
+    // 14K. Analytics & Inventory Query Clamping
+    const clampedTrendRes = await request('GET', '/api/v1/analytics/sales-trend?days=-50', {
+      Authorization: `Bearer ${adminToken}`,
+    });
+    assert(clampedTrendRes.statusCode === 200, 'Analytics sales-trend safely clamps negative days parameter to default (HTTP 200)');
+
+    const clampedExpiryRes = await request('GET', '/api/v1/inventory/alerts/expiry?days=999999', {
+      Authorization: `Bearer ${invManagerToken}`,
+    });
+    assert(clampedExpiryRes.statusCode === 200, 'Inventory expiry alerts safely clamps extreme days parameter (HTTP 200)');
+
+    // 14L. Order Status Update, Customer Cancellation & Stock Restoration
+    const initialInvBeforeCancel = await Inventory.findOne({ productId: testProduct._id });
+    const initialStockBeforeCancel = initialInvBeforeCancel.totalStock;
+
+    // Create a pending customer order for 2 units
+    const orderForCancelRes = await request('POST', '/api/v1/orders', {
+      Authorization: `Bearer ${customerToken}`,
+    }, {
+      items: [{ productId: testProduct._id.toString(), quantity: 2 }],
+      paymentMethod: 'cash',
+      orderType: 'online',
+      orderStatus: 'pending',
+    });
+    assert(orderForCancelRes.statusCode === 201, 'Order created for cancellation test');
+    const orderToCancelId = orderForCancelRes.data.data.order._id;
+
+    // Verify stock was deducted by 2
+    const invAfterOrder = await Inventory.findOne({ productId: testProduct._id });
+    assert(invAfterOrder.totalStock === initialStockBeforeCancel - 2, 'Stock depleted by 2 units on order creation');
+
+    // Customer cancels own pending order
+    const cancelOrderRes = await request('PATCH', `/api/v1/orders/${orderToCancelId}/status`, {
+      Authorization: `Bearer ${customerToken}`,
+    }, {
+      status: 'cancelled',
+    });
+    assert(cancelOrderRes.statusCode === 200, 'Customer successfully cancels own pending order with HTTP 200');
+    assert(cancelOrderRes.data.data.order.orderStatus === 'cancelled', 'Order status verified as cancelled');
+
+    // Verify stock is restored to pre-order level!
+    const invAfterCancel = await Inventory.findOne({ productId: testProduct._id });
+    assert(invAfterCancel.totalStock === initialStockBeforeCancel, 'Deducted inventory batches restored to original level on order cancellation');
+
+    // Cancelling an already cancelled order should fail
+    const reCancelRes = await request('PATCH', `/api/v1/orders/${orderToCancelId}/status`, {
+      Authorization: `Bearer ${customerToken}`,
+    }, {
+      status: 'cancelled',
+    });
+    assert(reCancelRes.statusCode === 400, 'Modifying an already cancelled order is rejected with HTTP 400');
+
+    // 14M. Purchase Order Cancellation
+    const createPoForCancelRes = await request('POST', '/api/v1/purchase-orders', {
+      Authorization: `Bearer ${invManagerToken}`,
+    }, {
+      supplierId: existingSupplier._id.toString(),
+      items: [{ productId: testProduct._id.toString(), orderedQty: 15, unitCost: 30 }],
+    });
+    assert(createPoForCancelRes.statusCode === 201, 'Purchase order created for cancellation test');
+    const poToCancelId = createPoForCancelRes.data.data.purchaseOrder._id;
+
+    const cancelPoRes = await request('PATCH', `/api/v1/purchase-orders/${poToCancelId}/cancel`, {
+      Authorization: `Bearer ${invManagerToken}`,
+    }, {
+      reason: 'Vendor discontinued item',
+    });
+    assert(cancelPoRes.statusCode === 200, 'Purchase order cancelled successfully with HTTP 200');
+    assert(cancelPoRes.data.data.purchaseOrder.status === 'cancelled', 'PO status updated to cancelled');
+
+    const reCancelPoRes = await request('PATCH', `/api/v1/purchase-orders/${poToCancelId}/cancel`, {
+      Authorization: `Bearer ${invManagerToken}`,
+    }, {
+      reason: 'Duplicate cancel',
+    });
+    assert(reCancelPoRes.statusCode === 400, 'Cancelling an already cancelled PO returns HTTP 400');
+
+    // 14N. Supplier Update & Deactivate
+    const updateSupplierRes = await request('PUT', `/api/v1/suppliers/${existingSupplier._id}`, {
+      Authorization: `Bearer ${invManagerToken}`,
+    }, {
+      name: 'Amul Federation Updated',
+      contactPerson: 'Vikram Patel',
+      email: existingSupplier.email,
+      phone: '+91 99999 88888',
+      paymentTerms: 'Net 45',
+      rating: 4.8,
+    });
+    assert(updateSupplierRes.statusCode === 200, 'Supplier updated successfully with HTTP 200');
+    assert(updateSupplierRes.data.data.supplier.contactPerson === 'Vikram Patel', 'Supplier contact person updated');
+
+    const deactivateSupplierRes = await request('DELETE', `/api/v1/suppliers/${existingSupplier._id}`, {
+      Authorization: `Bearer ${adminToken}`,
+    });
+    assert(deactivateSupplierRes.statusCode === 200, 'Supplier deactivated successfully with HTTP 200');
+    assert(deactivateSupplierRes.data.data.supplier.status === 'inactive', 'Supplier status marked inactive');
+
+    // 14O. Blueprint Endpoint Aliases, Cashier Status Authorization & Category Lifecycle
+    // Cart add alias
+    const cartAddRes = await request('POST', '/api/v1/cart/add', {
+      Authorization: `Bearer ${customerToken}`,
+    }, {
+      productId: testProduct._id.toString(),
+      quantity: 2,
+    });
+    assert(cartAddRes.statusCode === 200, 'Cart alias POST /api/v1/cart/add succeeds with HTTP 200');
+
+    // Cart update alias
+    const cartUpdateRes = await request('PUT', '/api/v1/cart/update', {
+      Authorization: `Bearer ${customerToken}`,
+    }, {
+      productId: testProduct._id.toString(),
+      quantity: 4,
+    });
+    assert(cartUpdateRes.statusCode === 200, 'Cart alias PUT /api/v1/cart/update succeeds with HTTP 200');
+
+    // Cart remove item alias
+    const cartRemoveRes = await request('DELETE', `/api/v1/cart/item/${testProduct._id}`, {
+      Authorization: `Bearer ${customerToken}`,
+    });
+    assert(cartRemoveRes.statusCode === 200, 'Cart alias DELETE /api/v1/cart/item/:id succeeds with HTTP 200');
+
+    // POS hold & recall GET alias
+    const holdRecallRes = await request('POST', '/api/v1/pos/hold', {
+      Authorization: `Bearer ${cashierToken}`,
+    }, {
+      items: [{ productId: testProduct._id.toString(), quantity: 1, unitPrice: 50, barcode: testProduct.barcode, name: testProduct.name }],
+      customerName: 'Recall Test Customer',
+    });
+    assert(holdRecallRes.statusCode === 201, 'Cashier holds cart successfully');
+    const heldRecallCartId = holdRecallRes.data.data.heldCart._id;
+
+    const recallGetRes = await request('GET', `/api/v1/pos/recall/${heldRecallCartId}`, {
+      Authorization: `Bearer ${cashierToken}`,
+    });
+    assert(recallGetRes.statusCode === 200, 'POS alias GET /api/v1/pos/recall/:id succeeds with HTTP 200');
+
+    // Cashier Order Status Authorization
+    const orderForCashierRes = await request('POST', '/api/v1/orders', {
+      Authorization: `Bearer ${customerToken}`,
+    }, {
+      items: [{ productId: testProduct._id.toString(), quantity: 1 }],
+      paymentMethod: 'cash',
+      orderType: 'online',
+    });
+    assert(orderForCashierRes.statusCode === 201, 'Order created for Cashier status test');
+    const orderForCashierId = orderForCashierRes.data.data.order._id;
+
+    const cashierUpdateStatusRes = await request('PATCH', `/api/v1/orders/${orderForCashierId}/status`, {
+      Authorization: `Bearer ${cashierToken}`,
+    }, {
+      status: 'processing',
+    });
+    assert(cashierUpdateStatusRes.statusCode === 200, 'Cashier successfully updates order status to processing with HTTP 200');
+
+    // Category Update & Archive
+    const updateCategoryRes = await request('PUT', `/api/v1/categories/${regressionCatId}`, {
+      Authorization: `Bearer ${adminToken}`,
+    }, {
+      name: 'Dairy & Farm Fresh Goods',
+      description: 'Milk, butter, and organic cheeses',
+    });
+    assert(updateCategoryRes.statusCode === 200, 'Admin updates category via PUT with HTTP 200');
+    assert(updateCategoryRes.data.data.category.name === 'Dairy & Farm Fresh Goods', 'Category name updated');
+
+    const deleteCategoryRes = await request('DELETE', `/api/v1/categories/${regressionCatId}`, {
+      Authorization: `Bearer ${adminToken}`,
+    });
+    assert(deleteCategoryRes.statusCode === 200, 'Admin archives category via DELETE with HTTP 200');
+    assert(deleteCategoryRes.data.data.category.isActive === false, 'Category soft-archived with isActive=false');
+
+    // 14P. Review Deletion & Inactive Product Catalog Filtering
+    // Post a review
+    const postRevRes = await request('POST', '/api/v1/reviews', {
+      Authorization: `Bearer ${customerToken}`,
+    }, {
+      productId: testProduct._id.toString(),
+      rating: 5,
+      comment: 'Super fresh and high quality product!',
+    });
+    assert(postRevRes.statusCode === 201, 'Customer posts product review with HTTP 201');
+    const reviewId = postRevRes.data.data.review._id;
+
+    // Unauthorized deletion attempt by Cashier
+    const unauthorizedDeleteRevRes = await request('DELETE', `/api/v1/reviews/${reviewId}`, {
+      Authorization: `Bearer ${cashierToken}`,
+    });
+    assert(unauthorizedDeleteRevRes.statusCode === 403, 'Unauthorized user cannot delete another user review (HTTP 403)');
+
+    // Authorized deletion by review author
+    const authorizedDeleteRevRes = await request('DELETE', `/api/v1/reviews/${reviewId}`, {
+      Authorization: `Bearer ${customerToken}`,
+    });
+    assert(authorizedDeleteRevRes.statusCode === 200, 'Review author deletes own review with HTTP 200');
+
+    // Soft delete product then query with includeInactive=true
+    const softDeleteProdRes = await request('DELETE', `/api/v1/products/${createdProdId}`, {
+      Authorization: `Bearer ${adminToken}`,
+    });
+    assert(softDeleteProdRes.statusCode === 200, 'Admin soft-deletes product with HTTP 200');
+
+    const publicProdListRes = await request('GET', '/api/v1/products');
+    const publicFound = publicProdListRes.data.data.products.some((p) => p._id.toString() === createdProdId.toString());
+    assert(!publicFound, 'Public catalog excludes soft-deleted product');
+
+    const adminProdListRes = await request('GET', '/api/v1/products?includeInactive=true', {
+      Authorization: `Bearer ${adminToken}`,
+    });
+    const adminFound = adminProdListRes.data.data.products.some((p) => p._id.toString() === createdProdId.toString());
+    assert(adminFound, 'Admin catalog with includeInactive=true includes soft-deleted product');
+
   } catch (err) {
     console.error('Test Suite Aborted Due to Error:', err);
     failedTests++;
@@ -875,6 +1925,7 @@ async function runTestSuite() {
     server.close();
     // Drop test database to leave environment completely clean
     try {
+      validateTestDatabaseUri(TEST_DB_URI);
       await mongoose.connection.dropDatabase();
     } catch (e) {}
     await mongoose.disconnect();

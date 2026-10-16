@@ -206,13 +206,15 @@ const receivePurchaseOrder = async (userId, id, ipAddress = '') => {
       console.error('[Post-Commit Audit Error]: Failed to create PO receipt audit log:', auditErr.message);
     }
 
-    // Socket notification to inventory staff (Post-commit)
+    // Socket notification to inventory staff and store admins (Post-commit)
     try {
-      emitNotification({ role: 'inventory_manager' }, NOTIFICATION_TYPES.PO_RECEIVED, {
+      const poPayload = {
         poNumber: po.poNumber,
         totalAmount: po.totalAmount,
         timestamp: new Date().toISOString(),
-      });
+      };
+      emitNotification({ role: 'inventory_manager' }, NOTIFICATION_TYPES.PO_RECEIVED, poPayload);
+      emitNotification({ role: 'admin' }, NOTIFICATION_TYPES.PO_RECEIVED, poPayload);
     } catch (notifErr) {
       console.error('[Post-Commit Notification Error]:', notifErr.message);
     }
@@ -248,9 +250,53 @@ const receivePurchaseOrder = async (userId, id, ipAddress = '') => {
   }
 };
 
+const cancelPurchaseOrder = async (userId, id, reason = '', ipAddress = '') => {
+  const po = await PurchaseOrder.findById(id);
+  if (!po) {
+    throw AppError.notFound(`Purchase Order with ID '${id}' not found`);
+  }
+  if (po.status === PURCHASE_ORDER_STATUS.RECEIVED) {
+    throw AppError.badRequest(`Cannot cancel Purchase Order ${po.poNumber} because goods have already been received into inventory.`);
+  }
+  if (po.status === PURCHASE_ORDER_STATUS.CANCELLED) {
+    throw AppError.badRequest(`Purchase Order ${po.poNumber} is already cancelled.`);
+  }
+
+  const previousStatus = po.status;
+  po.status = PURCHASE_ORDER_STATUS.CANCELLED;
+  await po.save();
+
+  await AuditLog.create({
+    userId,
+    action: 'PO_CANCELLED',
+    module: AUDIT_MODULES.INVENTORY,
+    recordId: po._id.toString(),
+    ipAddress,
+    previousState: { status: previousStatus },
+    newState: { status: po.status },
+    notes: `Cancelled Purchase Order ${po.poNumber}${reason ? `: ${reason}` : ''}`,
+  });
+
+  try {
+    emitNotification({ role: 'inventory_manager' }, 'purchase_order', {
+      poId: po._id,
+      poNumber: po.poNumber,
+      status: po.status,
+      title: `Purchase Order ${po.poNumber} Cancelled`,
+      message: `PO #${po.poNumber} was cancelled by staff.`,
+      timestamp: new Date().toISOString(),
+    });
+  } catch (notifErr) {
+    console.error('[Notification Error]:', notifErr.message);
+  }
+
+  return po;
+};
+
 module.exports = {
   getAllPurchaseOrders,
   getPurchaseOrderById,
   createPurchaseOrder,
   receivePurchaseOrder,
+  cancelPurchaseOrder,
 };

@@ -13,5 +13,6 @@ router.get('/', purchaseOrderController.getPurchaseOrders);
 router.get('/:id', purchaseOrderController.getPurchaseOrder);
 router.post('/', validatePurchaseOrder, purchaseOrderController.createPurchaseOrder);
 router.patch('/:id/receive', purchaseOrderController.receivePurchaseOrder);
+router.patch('/:id/cancel', purchaseOrderController.cancelPurchaseOrder);
 
 module.exports = router;

@@ -406,9 +406,9 @@ def create_presentation():
     s10 = prs.slides[9]
     for shp in s10.shapes:
         if shp.name == "Text 5":
-            set_text_run(shp.text_frame.paragraphs[0], "83 Tests", font_name="Calibri", font_size_pt=30.0, bold=True, color_rgb=INDIGO_LIGHT, align=PP_ALIGN.CENTER)
+            set_text_run(shp.text_frame.paragraphs[0], "168 Tests", font_name="Calibri", font_size_pt=30.0, bold=True, color_rgb=INDIGO_LIGHT, align=PP_ALIGN.CENTER)
         elif shp.name == "Text 6":
-            set_text_run(shp.text_frame.paragraphs[0], "100% Passed Test Suite", font_name="Calibri", font_size_pt=9.5, bold=False, color_rgb=SLATE_400, align=PP_ALIGN.CENTER)
+            set_text_run(shp.text_frame.paragraphs[0], "100% Passed (14 Suites)", font_name="Calibri", font_size_pt=9.5, bold=False, color_rgb=SLATE_400, align=PP_ALIGN.CENTER)
         elif shp.name == "Text 8":
             set_text_run(shp.text_frame.paragraphs[0], "< 1.2 sec", font_name="Calibri", font_size_pt=30.0, bold=True, color_rgb=EMERALD_LIGHT, align=PP_ALIGN.CENTER)
         elif shp.name == "Text 9":
@@ -432,7 +432,7 @@ def create_presentation():
         elif shp.name == "Text 20":
             set_text_run(shp.text_frame.paragraphs[0], "6. Multi-Tier Role Governance (Admin, Manager, Cashier, Customer)", font_name="Calibri", font_size_pt=10.0, bold=False, color_rgb=SLATE_200)
         elif shp.name == "Text 21":
-            set_text_run(shp.text_frame.paragraphs[0], "7. Comprehensive Test Automation (83 Unit, Integration & Concurrency Tests)", font_name="Calibri", font_size_pt=10.0, bold=False, color_rgb=SLATE_200)
+            set_text_run(shp.text_frame.paragraphs[0], "7. Comprehensive Test Automation (168 Unit, Integration & Security Tests)", font_name="Calibri", font_size_pt=10.0, bold=False, color_rgb=SLATE_200)
     print("Slide 10 updated (Results).")
 
     # ----------------------------------------------------
@@ -451,7 +451,7 @@ def create_presentation():
         elif shp.name == "Text 15":
             set_text_run(shp.text_frame.paragraphs[0], "Tailored end-to-end for the Indian retail ecosystem with seamless INR (₹) pricing, GST tax computation, and authenticated PDF billing.", font_name="Calibri", font_size_pt=11.5, bold=False, color_rgb=SLATE_200)
         elif shp.name == "Text 18":
-            set_text_run(shp.text_frame.paragraphs[0], "Validated with 83 automated tests achieving 100% pass rate, demonstrating enterprise-grade stability, security, and scalability.", font_name="Calibri", font_size_pt=11.5, bold=False, color_rgb=SLATE_200)
+            set_text_run(shp.text_frame.paragraphs[0], "Validated with 168 automated tests achieving 100% pass rate across 14 suites, demonstrating enterprise-grade stability, security, and scalability.", font_name="Calibri", font_size_pt=11.5, bold=False, color_rgb=SLATE_200)
     print("Slide 11 updated (Conclusion).")
 
     # ----------------------------------------------------

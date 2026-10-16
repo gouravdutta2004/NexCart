@@ -18,7 +18,8 @@ import {
   Download,
   Loader2,
   Info,
-  Zap
+  Zap,
+  Printer
 } from 'lucide-react';
 import posService from '../../services/posService';
 import orderService from '../../services/orderService';
@@ -32,6 +33,7 @@ export default function SelfCheckout() {
 
   const [barcodeInput, setBarcodeInput] = useState('');
   const [scannedItems, setScannedItems] = useState([]);
+  const [lastScannedItem, setLastScannedItem] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [checkoutComplete, setCheckoutComplete] = useState(false);
@@ -41,6 +43,26 @@ export default function SelfCheckout() {
   useEffect(() => {
     inputRef.current?.focus();
   }, [checkoutComplete]);
+
+  const playScanChime = () => {
+    try {
+      const AudioCtx = window.AudioContext || window.webkitAudioContext;
+      if (!AudioCtx) return;
+      const ctx = new AudioCtx();
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(920, ctx.currentTime);
+      gain.gain.setValueAtTime(0.12, ctx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.1);
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.start();
+      osc.stop(ctx.currentTime + 0.1);
+    } catch {
+      // Audio playback restrictions fallback
+    }
+  };
 
   const handleScan = async (codeToLookup) => {
     const code = (codeToLookup || barcodeInput).trim();
@@ -53,6 +75,9 @@ export default function SelfCheckout() {
       const res = await posService.lookupBarcode(code);
       const product = res?.product || res?.data?.product;
       if (!product) throw new Error('Product not found for scanned barcode');
+
+      playScanChime();
+      setLastScannedItem(product);
 
       setScannedItems((prev) => {
         const idx = prev.findIndex((i) => i.productId === product._id);
@@ -115,6 +140,13 @@ export default function SelfCheckout() {
     setError(null);
 
     try {
+      // 1. Pre-checkout stock and product availability validation
+      await posService.validateCheckout(scannedItems.map((item) => ({
+        productId: item.productId,
+        quantity: item.quantity,
+      })));
+
+      // 2. Atomic Order placement with server-authoritative pricing
       const payload = {
         orderType: 'self_checkout',
         items: scannedItems.map((item) => ({
@@ -157,6 +189,7 @@ export default function SelfCheckout() {
 
   const handleNewShopper = () => {
     setScannedItems([]);
+    setLastScannedItem(null);
     setCheckoutComplete(false);
     setReceiptData(null);
     setBarcodeInput('');
@@ -193,6 +226,67 @@ export default function SelfCheckout() {
               >
                 <ArrowLeft className="w-3.5 h-3.5" /> Back to Store
               </Link>
+            </div>
+
+            {/* Supermarket Optical Scanner Viewport HUD */}
+            <div className="relative overflow-hidden rounded-3xl bg-slate-950 border border-slate-800 text-white shadow-xl mb-6">
+              {/* Telemetry Header */}
+              <div className="px-4 sm:px-6 py-2.5 bg-slate-900/90 border-b border-slate-800 flex flex-wrap items-center justify-between text-[11px] font-mono text-slate-400 gap-2">
+                <div className="flex items-center gap-2">
+                  <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping" />
+                  <span className="text-emerald-400 font-bold uppercase tracking-wider">Omni-Directional Laser Active</span>
+                  <span className="text-slate-600 hidden sm:inline">|</span>
+                  <span className="hidden sm:inline">60 FPS OPTICAL</span>
+                </div>
+                <div className="flex items-center gap-3">
+                  <span className="text-slate-400">SECURITY SCALE:</span>
+                  <span className="text-emerald-300 font-bold font-mono">
+                    {(scannedItems.reduce((acc, i) => acc + i.quantity * 0.45, 0)).toFixed(2)} KG BALANCED
+                  </span>
+                  <span className="text-slate-600 hidden sm:inline">|</span>
+                  <span className="text-slate-400 hidden sm:inline">SLOT: SC-04</span>
+                </div>
+              </div>
+
+              {/* Optical Scanning Chamber */}
+              <div className="relative h-44 sm:h-48 flex flex-col items-center justify-center p-6 bg-gradient-to-b from-slate-950 via-slate-900/60 to-slate-950 select-none">
+                {/* Precision Grid Dots */}
+                <div 
+                  className="absolute inset-0 opacity-15 pointer-events-none" 
+                  style={{ 
+                    backgroundImage: 'radial-gradient(circle at 1px 1px, #10b981 1px, transparent 0)', 
+                    backgroundSize: '24px 24px' 
+                  }} 
+                />
+
+                {/* Laser Sweep Beam */}
+                <div className="absolute left-6 right-6 h-0.5 bg-red-500 shadow-[0_0_14px_3px_rgba(239,68,68,0.7)] animate-scan-laser pointer-events-none" />
+
+                {/* Reticle Target Frame */}
+                <div className="relative w-64 sm:w-80 h-28 border border-dashed border-emerald-500/30 rounded-xl flex items-center justify-center">
+                  <div className="absolute -top-1 -left-1 w-4 h-4 border-t-2 border-l-2 border-emerald-400 rounded-tl" />
+                  <div className="absolute -top-1 -right-1 w-4 h-4 border-t-2 border-r-2 border-emerald-400 rounded-tr" />
+                  <div className="absolute -bottom-1 -left-1 w-4 h-4 border-b-2 border-l-2 border-emerald-400 rounded-bl" />
+                  <div className="absolute -bottom-1 -right-1 w-4 h-4 border-b-2 border-r-2 border-emerald-400 rounded-br" />
+
+                  <div className="w-12 h-0.5 bg-emerald-400/40 rounded-full" />
+
+                  {lastScannedItem ? (
+                    <div className="absolute inset-x-2 -bottom-3 translate-y-full text-center">
+                      <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-950/90 border border-emerald-500/50 text-emerald-300 text-xs font-semibold shadow-lg">
+                        <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
+                        Rung: {lastScannedItem.name} — {formatCurrency(lastScannedItem.sellingPrice || lastScannedItem.unitPrice)}
+                      </span>
+                    </div>
+                  ) : (
+                    <div className="absolute inset-x-0 -bottom-3 translate-y-full text-center">
+                      <span className="text-[11px] text-slate-400 font-mono tracking-wide">
+                        Point packaging barcode at glass scanner window
+                      </span>
+                    </div>
+                  )}
+                </div>
+              </div>
             </div>
 
             {/* Scan Bar & Sample Buttons */}
@@ -405,7 +499,14 @@ export default function SelfCheckout() {
             <h2 className="text-2xl font-extrabold text-slate-900 dark:text-white mb-1">Payment Successful!</h2>
             <p className="text-xs text-slate-500 dark:text-slate-400 mb-6">Thank you for using NexCart Express Self-Checkout</p>
 
-            <div className="p-6 bg-white dark:bg-slate-900 rounded-3xl border border-slate-200 dark:border-slate-800 text-left space-y-4 mb-6 shadow-xl">
+            {/* Top Serrated Edge */}
+            <div className="overflow-hidden leading-none text-white dark:text-slate-900 -mb-1">
+              <svg className="w-full h-2.5 fill-current" preserveAspectRatio="none" viewBox="0 0 200 8">
+                <polygon points="0,8 5,0 10,8 15,0 20,8 25,0 30,8 35,0 40,8 45,0 50,8 55,0 60,8 65,0 70,8 75,0 80,8 85,0 90,8 95,0 100,8 105,0 110,8 115,0 120,8 125,0 130,8 135,0 140,8 145,0 150,8 155,0 160,8 165,0 170,8 175,0 180,8 185,0 190,8 195,0 200,8" />
+              </svg>
+            </div>
+
+            <div className="printable-receipt p-6 bg-white dark:bg-slate-900 border-x border-slate-200 dark:border-slate-800 text-left space-y-4 shadow-xl">
               <div className="flex justify-between items-center pb-3 border-b border-slate-200 dark:border-slate-800 text-xs">
                 <div>
                   <div className="text-slate-500 dark:text-slate-400">Slip #{receiptData.invoiceNumber}</div>
@@ -456,16 +557,44 @@ export default function SelfCheckout() {
               </div>
             </div>
 
+            {/* Bottom Serrated Edge */}
+            <div className="overflow-hidden leading-none text-white dark:text-slate-900 -mt-1 mb-6">
+              <svg className="w-full h-2.5 fill-current" preserveAspectRatio="none" viewBox="0 0 200 8">
+                <polygon points="0,0 5,8 10,0 15,8 20,0 25,8 30,0 35,8 40,0 45,8 50,0 55,8 60,0 65,8 70,0 75,8 80,0 85,8 90,0 95,8 100,0 105,8 110,0 115,8 120,0 125,8 130,0 135,8 140,0 145,8 150,0 155,8 160,0 165,8 170,0 175,8 180,0 185,8 190,0 195,8 200,0" />
+              </svg>
+            </div>
+
             <div className="flex flex-col gap-3">
-              {receiptData.invoiceId && (
+              <div className="flex items-center gap-2">
                 <Button
-                  onClick={() => orderService.downloadInvoicePdf(receiptData.invoiceId, receiptData.invoiceNumber || receiptData.orderNumber)}
+                  onClick={() => window.print()}
                   variant="secondary"
-                  className="w-full py-3.5 shadow-sm"
+                  className="flex-1 py-3.5 shadow-sm"
                 >
-                  <Download className="w-4 h-4 mr-2 text-emerald-600 dark:text-emerald-400" />
-                  Download Official Tax Invoice (PDF)
+                  <Printer className="w-4 h-4 mr-2 text-slate-600 dark:text-slate-300" />
+                  Print Exit Pass
                 </Button>
+                {receiptData.invoiceId && user && (
+                  <Button
+                    onClick={async () => {
+                      try {
+                        await orderService.downloadInvoicePdf(receiptData.invoiceId, receiptData.invoiceNumber || receiptData.orderNumber);
+                      } catch (err) {
+                        setError(err.message || 'Could not download invoice PDF.');
+                      }
+                    }}
+                    variant="secondary"
+                    className="flex-1 py-3.5 shadow-sm"
+                  >
+                    <Download className="w-4 h-4 mr-2 text-emerald-600 dark:text-emerald-400" />
+                    Download PDF
+                  </Button>
+                )}
+              </div>
+              {!user && (
+                <p className="text-[11px] text-slate-500 dark:text-slate-400 text-center leading-normal">
+                  Exit pass above serves as verified proof of payment for door security. Sign in or register to access permanent PDF tax invoices.
+                </p>
               )}
               <Button
                 onClick={handleNewShopper}

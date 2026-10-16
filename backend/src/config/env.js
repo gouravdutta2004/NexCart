@@ -17,7 +17,7 @@ const config = {
   ADDITIONAL_ORIGINS: process.env.ADDITIONAL_ORIGINS || '',
   MONGODB_URI: process.env.MONGODB_URI || 'mongodb://127.0.0.1:27017/nexcart_db',
   JWT_SECRET: process.env.JWT_SECRET,
-  JWT_EXPIRES_IN: process.env.JWT_EXPIRES_IN || '7d',
+  JWT_EXPIRES_IN: process.env.JWT_EXPIRES_IN || '1d',
   RATE_LIMIT_WINDOW_MS: parseInt(process.env.RATE_LIMIT_WINDOW_MS, 10) || 15 * 60 * 1000,
   RATE_LIMIT_MAX: parseInt(process.env.RATE_LIMIT_MAX, 10) || 1000,
   SERVE_STATIC: process.env.SERVE_STATIC === 'true' || process.env.NODE_ENV === 'production',

@@ -3,7 +3,47 @@ const Order = require('../models/Order');
 const { generateInvoicePdf } = require('../services/pdfInvoiceService');
 const ApiResponse = require('../utils/apiResponse');
 const AppError = require('../utils/apiError');
-const { ROLES } = require('../utils/constants');
+const { ROLES, ORDER_TYPES } = require('../utils/constants');
+
+/**
+ * Validates invoice access according to enterprise supermarket access policy:
+ * - Customer: Only invoices belonging to their own orders (IDOR protection)
+ * - Cashier: Invoices within authorized operational lane scope (POS walk-in, self-checkout, or assigned register)
+ * - Admin: Full access permitted by administrative policy
+ * - Inventory Manager & others: Denied by default
+ * - Anonymous user: Strictly denied
+ */
+const validateInvoiceAccess = (user, order) => {
+  if (!user) {
+    throw AppError.unauthorized('Authentication required to access invoice');
+  }
+
+  if (user.role === ROLES.ADMIN) {
+    return true;
+  }
+
+  if (user.role === ROLES.CUSTOMER) {
+    const customerId = order?.customer?._id?.toString() || order?.customer?.toString();
+    if (!customerId || customerId !== user._id.toString()) {
+      throw AppError.forbidden('Access denied to this invoice');
+    }
+    return true;
+  }
+
+  if (user.role === ROLES.CASHIER) {
+    const cashierId = order?.cashier?._id?.toString() || order?.cashier?.toString();
+    const isAssignedCashier = cashierId && cashierId === user._id.toString();
+    if (cashierId && !isAssignedCashier) {
+      throw AppError.forbidden('Cashiers cannot access invoices processed by other cashiers');
+    }
+    if (!cashierId && order?.orderType !== ORDER_TYPES.SELF_CHECKOUT) {
+      throw AppError.forbidden('Cashiers are not authorized to access invoices outside their operational lane scope');
+    }
+    return true;
+  }
+
+  throw AppError.forbidden(`Role '${user.role}' is not authorized to access invoices`);
+};
 
 const getInvoiceByOrderId = async (req, res, next) => {
   try {
@@ -15,13 +55,7 @@ const getInvoiceByOrderId = async (req, res, next) => {
       throw AppError.notFound('Invoice not found for this order');
     }
 
-    // Customer can only access their own invoice
-    if (
-      req.user.role === ROLES.CUSTOMER &&
-      invoice.order?.customer?.toString() !== req.user._id.toString()
-    ) {
-      throw AppError.forbidden('Access denied to this invoice');
-    }
+    validateInvoiceAccess(req.user, invoice.order);
 
     return ApiResponse.success(res, {
       message: 'Invoice retrieved',
@@ -42,12 +76,7 @@ const getInvoiceById = async (req, res, next) => {
       throw AppError.notFound('Invoice record not found');
     }
 
-    if (
-      req.user.role === ROLES.CUSTOMER &&
-      invoice.order?.customer?.toString() !== req.user._id.toString()
-    ) {
-      throw AppError.forbidden('Access denied to this invoice');
-    }
+    validateInvoiceAccess(req.user, invoice.order);
 
     return ApiResponse.success(res, {
       message: 'Invoice record retrieved',
@@ -66,15 +95,11 @@ const downloadInvoicePdf = async (req, res, next) => {
     }
 
     const order = await Order.findById(invoice.order);
-
-    // If authenticated customer, verify ownership
-    if (
-      req.user &&
-      req.user.role === ROLES.CUSTOMER &&
-      order?.customer?.toString() !== req.user._id.toString()
-    ) {
-      throw AppError.forbidden('Access denied to this invoice');
+    if (!order) {
+      throw AppError.notFound('Associated order record not found for invoice');
     }
+
+    validateInvoiceAccess(req.user, order);
 
     res.setHeader('Content-Type', 'application/pdf');
     res.setHeader(

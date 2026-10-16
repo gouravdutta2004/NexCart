@@ -30,9 +30,9 @@ All automated integration tests are executed against an isolated MongoDB test da
 | **Database Server** | MongoDB v7.0.30 Community Edition |
 | **Transaction Mode** | Multi-document ACID session with fallback compensating batch rollback |
 | **Test Database URI** | `mongodb://127.0.0.1:27017/nexcart_test_db` |
-| **Test Execution Date** | October 8, 2026 |
+| **Test Execution Date** | October 15, 2026 |
 | **Test Command** | `npm test` (`node tests/integration.test.js`) |
-| **Test Result** | **83 Passed, 0 Failed (100% Pass Rate)** |
+| **Test Result** | **168 Passed, 0 Failed (100% Pass Rate across 14 Suites)** |
 
 ---
 
@@ -138,7 +138,7 @@ All automated integration tests are executed against an isolated MongoDB test da
   ✅ PASS: Review correctly marked as unverified (customer never purchased the item)
   ✅ PASS: Review correctly unverified when order is processing (strictly requires completed order)
 
---- SUITE 9: Immutable Audit Trail ---
+--- SUITE 9: Application-Level Append-Only, Tamper-Evident Audit Trail ---
   ✅ PASS: Audit log endpoint returns HTTP 200
   ✅ PASS: Audit log contains system events (users, orders, logins)
   ✅ PASS: Mongoose immutability hook prevents tampering with audit logs
@@ -157,8 +157,101 @@ All automated integration tests are executed against an isolated MongoDB test da
   ✅ PASS: Cashier barcode scan returns HTTP 200
   ✅ PASS: Authenticated cashier scan legitimately provides warehouse availableStock
 
+--- SUITE 11: Deep Audit Regression & Edge Cases ---
+  ✅ PASS: Stock adjustment API returns HTTP 200
+  ✅ PASS: Multi-batch reduction accurately reduced stock to 5 units (totalStock: 5, batchSum: 5)
+  ✅ PASS: Admin creates product successfully with HTTP 201
+  ✅ PASS: New product automatically has an initialized Inventory record with totalStock 0
+  ✅ PASS: Admin accesses /api/v1/orders/my-orders with HTTP 200
+  ✅ PASS: Customer order history returns HTTP 200
+  ✅ PASS: Order history explicitly provides invoiceId for digital receipt downloading
+
+--- SUITE 12: Enterprise Access Control & Held-Cart Integrity ---
+  ✅ PASS: Customer A creates online order with HTTP 201
+  ✅ PASS: Order A and Invoice A successfully generated
+  ✅ PASS: Customer A reads their own order with HTTP 200
+  ✅ PASS: Customer B reading Customer A order denied with HTTP 403 Forbidden (IDOR)
+  ✅ PASS: Unauthenticated user reading order rejected with HTTP 401 Unauthorized
+  ✅ PASS: Inventory Manager reading order denied with HTTP 403 Forbidden
+  ✅ PASS: Cashier accessing online delivery order outside scope denied with HTTP 403 Forbidden
+  ✅ PASS: Admin reads Customer A order with HTTP 200
+  ✅ PASS: Cashier processes POS walk-in order with HTTP 201
+  ✅ PASS: Cashier accesses authorized POS walk-in order with HTTP 200
+  ✅ PASS: Customer A accesses own invoice metadata with HTTP 200
+  ✅ PASS: Customer A accesses invoice by Order ID with HTTP 200
+  ✅ PASS: Customer B accessing Customer A invoice denied with HTTP 403 Forbidden
+  ✅ PASS: Customer B accessing Customer A invoice by order ID denied with HTTP 403 Forbidden
+  ✅ PASS: Unauthenticated PDF request denied with HTTP 401 Unauthorized
+  ✅ PASS: Inventory Manager accessing invoice metadata denied with HTTP 403 Forbidden
+  ✅ PASS: Inventory Manager requesting invoice PDF denied with HTTP 403 Forbidden
+  ✅ PASS: Cashier accessing online delivery invoice PDF denied with HTTP 403 Forbidden
+  ✅ PASS: Cashier downloads authorized POS walk-in invoice PDF with HTTP 200
+  ✅ PASS: Admin downloads invoice PDF with HTTP 200
+  ✅ PASS: Public validation with excess stock returns HTTP 400 Bad Request
+  ✅ PASS: Public validation strictly DOES NOT expose exact inventory counts or batch details
+  ✅ PASS: Public validation provides user-safe guidance message
+  ✅ PASS: Staff validation returns HTTP 400 Bad Request
+  ✅ PASS: Staff validation legitimately provides detailed warehouse inventory count
+  ✅ PASS: Valid pre-checkout items pass validation with HTTP 200
+  ✅ PASS: Validation confirms isValid=true for self-checkout kiosk
+  ✅ PASS: Cashier holds cart successfully with HTTP 201
+  ✅ PASS: Held cart enforces authoritative server unitPrice (₹66) ignoring client tampered price (₹1.00)
+  ✅ PASS: Held cart calculates server-authoritative subtotal (₹132)
+  ✅ PASS: Held cart with excessive discount rejected with HTTP 400 Bad Request
+  ✅ PASS: Cashier recalls held cart with HTTP 200
+  ✅ PASS: Recalled cart dynamically updates unitPrice to new catalog price (₹76)
+  ✅ PASS: Recalled cart flags priceChangedAlert to notify cashier of catalog adjustment
+  ✅ PASS: Order created from held/POS checkout with HTTP 201
+  ✅ PASS: Order checkout strictly enforces authoritative server unitPrice (₹66) ignoring client tampered price (₹0.01)
+
+--- SUITE 13: Cashier Scope Isolation, Cart Aggregation, Test DB Safety & Strict CORS ---
+  ✅ PASS: Cashier B login succeeds with HTTP 200
+  ✅ PASS: Cashier B cannot read Cashier A order by ID (HTTP 403 Forbidden)
+  ✅ PASS: Cashier B receives explicit isolation error message
+  ✅ PASS: Cashier B lists orders with HTTP 200
+  ✅ PASS: Cashier B order list strictly excludes orders processed by Cashier A
+  ✅ PASS: Cashier B cannot read Cashier A invoice metadata (HTTP 403 Forbidden)
+  ✅ PASS: Cashier B cannot download Cashier A invoice PDF (HTTP 403 Forbidden)
+  ✅ PASS: Held cart combining duplicate product IDs exceeding stock is rejected with HTTP 400 Bad Request
+  ✅ PASS: Aggregated duplicate lines stock validation returns informative insufficient stock message
+  ✅ PASS: Cashier held cart with discount exceeding 20% is rejected with HTTP 400 Bad Request
+  ✅ PASS: Cashier discount cap error message explicitly indicates 20% ceiling
+  ✅ PASS: validateTestDatabaseUri strictly refuses dev database nexcart_db
+  ✅ PASS: validateTestDatabaseUri strictly refuses production hostname
+  ✅ PASS: validateTestDatabaseUri strictly refuses database name without test
+  ✅ PASS: validateTestDatabaseUri confirms safe test DB: nexcart_test_db
+  ✅ PASS: CORS preflight from wildcard subdomain https://attacker.vercel.app is rejected
+  ✅ PASS: isOriginAllowed rejects .onrender.com wildcards
+  ✅ PASS: isOriginAllowed rejects .netlify.app wildcards
+  ✅ PASS: isOriginAllowed accepts configured local Vite port 5173
+  ✅ PASS: isOriginAllowed accepts configured local Docker port 3000
+
+--- SUITE 14: Standardized Discount Authorization, Safety Guards, Pagination & DoS Protection ---
+  ✅ PASS: validateTestDatabaseUri strictly blocks remote Atlas cluster test database without override
+  ✅ PASS: validateTestDatabaseUri permits remote test host only when ALLOW_REMOTE_TEST_DB=true
+  ✅ PASS: validateTestDatabaseUri rejects empty URI
+  ✅ PASS: validateTestDatabaseUri rejects non-mongodb protocol (http://)
+  ✅ PASS: validateTestDatabaseUri rejects URI with missing database name
+  ✅ PASS: Customer attempting POS walk-in order is rejected with HTTP 403 Forbidden
+  ✅ PASS: Customer POS spoof error confirms POS orders must be placed through an authorized cashier
+  ✅ PASS: Customer online order with attempted client line discount succeeds with HTTP 201 Created under server pricing
+  ✅ PASS: Customer online order ignores client-injected line discount (discountTotal = ₹0)
+  ✅ PASS: Cashier checkout with discount > 20% is rejected with HTTP 400 Bad Request
+  ✅ PASS: Cashier checkout discount error explicitly states 20% ceiling
+  ✅ PASS: Cashier checkout with discount > 20% succeeds with HTTP 201 Created when manager override is supplied
+  ✅ PASS: Order discountTotal (₹19.8) accurately matches approved override discount (₹19.8)
+  ✅ PASS: Admin checkout with discount > 20% succeeds with HTTP 201 Created by administrative privilege
+  ✅ PASS: Pre-checkout validation combining duplicate line items (qty 3+3=6 vs stock 4) is rejected with HTTP 400
+  ✅ PASS: Staff pre-checkout validation returns standard validation failure message
+  ✅ PASS: Negative pagination parameters handled gracefully with HTTP 200
+  ✅ PASS: Negative page/limit safely defaults to page=1, limit=10 (received page=1, limit=10)
+  ✅ PASS: Admin users list with extreme pagination returns HTTP 200
+  ✅ PASS: Extreme limit is safely clamped to maximum bound of 100 (received limit=100)
+  ✅ PASS: Analytics top-products handles negative limit with HTTP 200
+  ✅ PASS: Payload exceeding 500 KB is rejected with HTTP 413 Payload Too Large
+
 ================================================================
-📊 TEST SUITE SUMMARY: 83 PASSED, 0 FAILED (100% Pass Rate)
+📊 TEST SUITE SUMMARY: 168 PASSED, 0 FAILED (100% Pass Rate across 14 Suites)
 ================================================================
 ```
 
@@ -192,8 +285,20 @@ All automated integration tests are executed against an isolated MongoDB test da
 | TC-23 | Audit | Audit trail append-only guard | Mongoose pre-hook prohibits update/delete modifications | Passed |
 | TC-24 | Orders | Anonymous checkout restriction | Restricts unauthenticated checkouts strictly to self-checkout kiosk; rejects online/POS with 401 | Passed |
 | TC-25 | Inventory / Orders | Real concurrent checkout race condition (`Promise.all`) | Exactly 1 of 2 simultaneous requests succeeds (201) and 1 is rejected (400), with 0 overselling | Passed |
-| TC-26 | Orders / Transactions | Forced checkout failure & multi-batch rollback | Restores exact multi-batch FEFO allocations, rolls back coupon usedCount, cleans orphan orders | Passed |
+| TC-26 | Orders / Transactions | Forced checkout failure & multi-batch rollback | Restores exact multi-batch FEFO allocations, rolls back coupon usedCount, cleans orphan orders, payments, invoices | Passed |
 | TC-27 | Invoices / Auth | JWT removal from URL query parameter | Rejects `?token=...` with 401 Unauthorized, enforces Authorization Bearer header | Passed |
 | TC-28 | Orders / RBAC | Role-enforced order types | Customer cannot place `pos_walkin` (403), Cashier cannot place `online` (400) | Passed |
 | TC-29 | POS / Held Carts | Held cart cashier ownership | Cashier can only recall own carts (403 for peers), Admin can recall any cart | Passed |
 | TC-30 | POS / Security | Reduced public inventory disclosure | Public barcode scanner hides exact `availableStock`, authenticated staff receives stock | Passed |
+| TC-31 | Orders / RBAC | Cashier-to-cashier order access isolation | Cashier A orders invisible and forbidden (403) to Cashier B | Passed |
+| TC-32 | Invoices / RBAC | Cashier-to-cashier invoice metadata & PDF isolation | Cashier B cannot access invoice metadata or PDF processed by Cashier A (403) | Passed |
+| TC-33 | POS / Cart | Duplicate held-cart line item stock aggregation | Aggregates repeated product IDs before validating stock availability (400 on excess) | Passed |
+| TC-34 | POS / Discounts | Discretionary cashier discount cap enforcement | Enforces 20% max line discount limit for cashiers (400 on excess) | Passed |
+| TC-35 | Test Guard | Test database connection & cleanup safety verification | Blocks non-test DBs and production URIs before connect or dropDatabase | Passed |
+| TC-36 | Security / CORS | Strict origin whitelisting & wildcard rejection | Rejects wildcard domain suffixes (.vercel.app, .onrender.com), allows explicit origins | Passed |
+| TC-37 | Test Guard | Remote cluster test execution safety verification | Blocks remote database hosts by default unless `ALLOW_REMOTE_TEST_DB=true` | Passed |
+| TC-38 | Test Guard | Malformed database URI rejection | Rejects empty strings, invalid schemes, and missing database identifiers | Passed |
+| TC-39 | Orders / POS | Standardized discount authorization | Enforces 20% cashier cap, manager overrides, and server-controlled pricing for customers | Passed |
+| TC-40 | POS / Checkout | Pre-checkout duplicate line items aggregation | Combines quantities for repeated product lines before inventory stock verification | Passed |
+| TC-41 | API / Pagination | Robust pagination bounding | Gracefully bounds negative page numbers and caps excessive limits to safe defaults | Passed |
+| TC-42 | Server / Security | Request body size limit hardening | Rejects payloads exceeding 500 KB with HTTP 413 Payload Too Large (DoS mitigation) | Passed |

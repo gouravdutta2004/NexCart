@@ -76,6 +76,12 @@ export default function InventoryDashboard() {
     loadInventoryData();
   }, []);
 
+  useEffect(() => {
+    if (notifications.length > 0) {
+      loadInventoryData();
+    }
+  }, [notifications.length]);
+
   const handleOpenAdjust = (prodId, currentStock, prodName) => {
     setSelectedProduct({ id: prodId, name: prodName, currentStock });
     setAdjQuantity(currentStock);
@@ -92,7 +98,7 @@ export default function InventoryDashboard() {
     try {
       await inventoryService.adjustStock({
         productId: selectedProduct.id,
-        newQuantity: adjQuantity,
+        newQuantity: Number(adjQuantity),
         reason: adjReason,
       });
 

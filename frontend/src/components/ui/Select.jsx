@@ -42,7 +42,7 @@ const Select = forwardRef(function Select(
             text-slate-900 dark:text-slate-100
             border ${error ? 'border-rose-400 focus:border-rose-500 focus:ring-rose-500/20' : 'border-slate-200 dark:border-slate-800 focus:border-emerald-500 focus:ring-emerald-500/20'}
             focus:outline-none focus:ring-4
-            disabled:bg-slate-100 dark:disabled:bg-slate-850 disabled:opacity-60 disabled:cursor-not-allowed
+            disabled:bg-slate-100 dark:disabled:bg-slate-800 disabled:opacity-60 disabled:cursor-not-allowed
             py-2.5 pl-3.5 pr-10
             ${className}
           `}

@@ -17,7 +17,7 @@ const scanBarcode = async (req, res, next) => {
 
 const holdCart = async (req, res, next) => {
   try {
-    const heldCart = await posService.holdCart(req.user._id, req.body);
+    const heldCart = await posService.holdCart(req.user._id, req.body, req.user);
     return ApiResponse.created(res, {
       message: `Cart held successfully under reference ${heldCart.cartReference}`,
       data: { heldCart },
@@ -55,7 +55,12 @@ const recallCart = async (req, res, next) => {
 
 const validateCheckout = async (req, res, next) => {
   try {
-    const validation = await posService.validatePreCheckout(req.body.items);
+    const isStaff = req.user && [ROLES.ADMIN, ROLES.CASHIER, ROLES.INVENTORY_MANAGER].includes(req.user.role);
+    const validation = await posService.validatePreCheckout(req.body.items, {
+      isStaff,
+      user: req.user,
+      managerOverride: req.body.managerOverride,
+    });
     return ApiResponse.success(res, {
       message: 'Checkout pre-flight validation passed',
       data: validation,

@@ -175,7 +175,7 @@ export default function CustomerDashboard() {
               {recentOrders.map((ord) => (
                 <div
                   key={ord._id}
-                  className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-850 border border-slate-200/80 dark:border-slate-800 flex flex-col sm:flex-row sm:items-center justify-between gap-4"
+                  className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-800/80 border border-slate-200/80 dark:border-slate-700/80 flex flex-col sm:flex-row sm:items-center justify-between gap-4"
                 >
                   <div className="flex items-center gap-3 min-w-0">
                     <div className="w-10 h-10 rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 flex items-center justify-center text-emerald-600 dark:text-emerald-400 shrink-0">
@@ -204,10 +204,10 @@ export default function CustomerDashboard() {
                       </span>
                     </div>
 
-                    {ord.invoiceId && (
+                    {(ord.invoiceId || ord.invoice?._id) && (
                       <button
                         type="button"
-                        onClick={() => orderService.downloadInvoicePdf(ord.invoiceId, ord.orderNumber)}
+                        onClick={() => orderService.downloadInvoicePdf(ord.invoiceId || ord.invoice?._id, ord.orderNumber)}
                         className="p-2 rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-slate-700 transition-colors"
                         title="Download GST Invoice PDF"
                       >

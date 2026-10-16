@@ -103,6 +103,7 @@ const getProductByBarcode = async (barcode) => {
   return product;
 };
 
+const Inventory = require('../models/Inventory');
 const AuditLog = require('../models/AuditLog');
 const { AUDIT_MODULES } = require('../utils/constants');
 
@@ -141,6 +142,16 @@ const createProduct = async (productData, userId = null, ipAddress = '') => {
     imageUrl: productData.imageUrl || '',
     isExpiryTracked: productData.isExpiryTracked !== undefined ? Boolean(productData.isExpiryTracked) : true,
     isActive: productData.isActive !== undefined ? Boolean(productData.isActive) : true,
+  });
+
+  // Automatically initialize baseline inventory record
+  await Inventory.create({
+    productId: newProduct._id,
+    totalStock: 0,
+    reorderLevel: 10,
+    optimalStock: 50,
+    shelfLocation: 'General Shelf',
+    batches: [],
   });
 
   await AuditLog.create({

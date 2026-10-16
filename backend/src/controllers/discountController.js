@@ -20,8 +20,13 @@ const createDiscount = async (req, res, next) => {
   try {
     const { code, title, discountType, discountValue, endDate, minPurchaseAmount } = req.body;
 
-    if (!code || !title || !discountValue || !endDate) {
+    if (!code || !title || discountValue === undefined || !endDate) {
       throw AppError.badRequest('Code, title, discount value, and end date are required');
+    }
+
+    const numDiscountValue = Number(discountValue);
+    if (isNaN(numDiscountValue) || numDiscountValue <= 0 || ((discountType === 'percentage' || !discountType) && numDiscountValue > 100)) {
+      throw AppError.badRequest('Discount value must be a positive number, and percentage discounts cannot exceed 100%');
     }
 
     const existing = await Discount.findOne({ code: code.toUpperCase() });
@@ -34,8 +39,8 @@ const createDiscount = async (req, res, next) => {
       title,
       description: req.body.description || '',
       discountType: discountType || 'percentage',
-      discountValue: Number(discountValue),
-      minPurchaseAmount: Number(minPurchaseAmount) || 0,
+      discountValue: numDiscountValue,
+      minPurchaseAmount: Math.max(0, Number(minPurchaseAmount) || 0),
       endDate: new Date(endDate),
       usageLimit: Number(req.body.usageLimit) || 1000,
     });
@@ -65,6 +70,8 @@ const validateDiscountCode = async (req, res, next) => {
       throw AppError.badRequest('Please enter a coupon code');
     }
 
+    const cleanSubtotal = Math.max(0, Number(orderSubtotal) || 0);
+
     const discount = await Discount.findOne({
       code: code.toUpperCase(),
       isActive: true,
@@ -79,7 +86,7 @@ const validateDiscountCode = async (req, res, next) => {
       throw AppError.badRequest(`Coupon code '${discount.code}' has reached maximum usage limit`);
     }
 
-    if (orderSubtotal < discount.minPurchaseAmount) {
+    if (cleanSubtotal < discount.minPurchaseAmount) {
       throw AppError.badRequest(
         `Minimum order amount of Rs. ${discount.minPurchaseAmount} required for this coupon`
       );
@@ -87,7 +94,7 @@ const validateDiscountCode = async (req, res, next) => {
 
     let calculatedDiscount = 0;
     if (discount.discountType === 'percentage') {
-      calculatedDiscount = (orderSubtotal * discount.discountValue) / 100;
+      calculatedDiscount = (cleanSubtotal * discount.discountValue) / 100;
       if (discount.maxDiscountAmount) {
         calculatedDiscount = Math.min(calculatedDiscount, discount.maxDiscountAmount);
       }
@@ -95,7 +102,7 @@ const validateDiscountCode = async (req, res, next) => {
       calculatedDiscount = discount.discountValue;
     }
 
-    calculatedDiscount = Math.min(calculatedDiscount, orderSubtotal);
+    calculatedDiscount = Math.min(calculatedDiscount, cleanSubtotal);
 
     return ApiResponse.success(res, {
       message: `Coupon '${discount.code}' applied successfully`,

@@ -28,20 +28,36 @@ import {
   ChevronRight,
   Tag
 } from 'lucide-react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
+import { useToast } from '../../context/ToastContext';
+import useSocket from '../../hooks/useSocket';
 
 export default function Orders() {
   const { user } = useAuth();
+  const toast = useToast();
+  const { on, off } = useSocket();
+  const navigate = useNavigate();
   const [orders, setOrders] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [selectedOrder, setSelectedOrder] = useState(null);
   const [page, setPage] = useState(1);
   const [pagination, setPagination] = useState({ total: 0, pages: 1 });
+  const [downloadingId, setDownloadingId] = useState(null);
+  const [cancellingId, setCancellingId] = useState(null);
 
   useEffect(() => {
     fetchOrders(page);
-  }, [page]);
+
+    const handleOrderStatusUpdate = () => {
+      fetchOrders(page);
+    };
+
+    on('order_status', handleOrderStatusUpdate);
+    return () => {
+      off('order_status', handleOrderStatusUpdate);
+    };
+  }, [page, on, off]);
 
   const fetchOrders = async (pageNum) => {
     setLoading(true);
@@ -54,6 +70,37 @@ export default function Orders() {
       setError(err.message || 'Failed to load order history');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleDownloadInvoice = async (invoiceId, orderNumber) => {
+    try {
+      setDownloadingId(invoiceId);
+      await orderService.downloadInvoicePdf(invoiceId, orderNumber);
+      toast.success(`Tax Invoice #${orderNumber} downloaded successfully.`, 'Invoice PDF');
+    } catch (err) {
+      toast.error(err.message || 'Could not download invoice PDF. Please try again.', 'Download Error');
+    } finally {
+      setDownloadingId(null);
+    }
+  };
+
+  const handleCancelOrder = async (orderId, orderNumber) => {
+    if (!window.confirm(`Are you sure you want to cancel order #${orderNumber}? Any reserved stock will be automatically returned to inventory.`)) {
+      return;
+    }
+    try {
+      setCancellingId(orderId);
+      await orderService.updateOrderStatus(orderId, 'cancelled');
+      toast.success(`Order #${orderNumber} cancelled successfully.`, 'Order Cancelled');
+      fetchOrders(page);
+      if (selectedOrder && selectedOrder._id === orderId) {
+        setSelectedOrder((prev) => ({ ...prev, orderStatus: 'cancelled' }));
+      }
+    } catch (err) {
+      toast.error(err.message || 'Failed to cancel order.', 'Cancellation Error');
+    } finally {
+      setCancellingId(null);
     }
   };
 
@@ -91,7 +138,7 @@ export default function Orders() {
             variant="primary"
             size="md"
             icon={ShoppingBag}
-            onClick={() => window.location.href = '/catalog'}
+            onClick={() => navigate('/catalog')}
           >
             Explore Catalog
           </Button>
@@ -113,7 +160,7 @@ export default function Orders() {
             title="No orders yet"
             description="Your completed purchases and supermarket self-checkout orders will be displayed here."
             actionLabel="Start Shopping Now"
-            onAction={() => window.location.href = '/catalog'}
+            onAction={() => navigate('/catalog')}
           />
         ) : (
           <div className="space-y-4">
@@ -175,12 +222,24 @@ export default function Orders() {
                           View
                         </Button>
 
-                        {ord.invoiceId && (
+                        {ord.orderStatus === 'pending' && (
+                          <Button
+                            variant="danger"
+                            size="xs"
+                            disabled={cancellingId === ord._id}
+                            onClick={() => handleCancelOrder(ord._id, ord.orderNumber)}
+                          >
+                            {cancellingId === ord._id ? 'Cancelling...' : 'Cancel'}
+                          </Button>
+                        )}
+
+                        {(ord.invoiceId || ord.invoice?._id) && (
                           <button
                             type="button"
-                            onClick={() => orderService.downloadInvoicePdf(ord.invoiceId, ord.orderNumber)}
+                            onClick={() => handleDownloadInvoice(ord.invoiceId || ord.invoice?._id, ord.orderNumber)}
+                            disabled={downloadingId === (ord.invoiceId || ord.invoice?._id)}
                             title="Download Tax Invoice PDF"
-                            className="p-1.5 rounded-lg text-emerald-600 hover:text-emerald-700 hover:bg-emerald-50 dark:hover:bg-emerald-950/50 transition-colors"
+                            className="p-1.5 rounded-lg text-emerald-600 hover:text-emerald-700 hover:bg-emerald-50 dark:hover:bg-emerald-950/50 transition-colors disabled:opacity-50"
                           >
                             <Download className="w-4 h-4" />
                           </button>
@@ -218,7 +277,7 @@ export default function Orders() {
         >
           <div className="space-y-6">
             {/* Status & Delivery Snapshot */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 p-4 rounded-2xl bg-slate-50 dark:bg-slate-850 border border-slate-200/80 dark:border-slate-800 text-xs">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 p-4 rounded-2xl bg-slate-50 dark:bg-slate-800/80 border border-slate-200/80 dark:border-slate-700/80 text-xs">
               <div className="space-y-1">
                 <span className="text-[10px] font-bold uppercase text-slate-400">Fulfillment Status</span>
                 <div><StatusBadge status={selectedOrder.orderStatus} type="order" size="sm" /></div>
@@ -278,7 +337,7 @@ export default function Orders() {
             </div>
 
             {/* Financial Summary */}
-            <div className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-850 border border-slate-200/80 dark:border-slate-800 text-xs space-y-2">
+            <div className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-800/80 border border-slate-200/80 dark:border-slate-700/80 text-xs space-y-2">
               <div className="flex justify-between text-slate-500">
                 <span>Subtotal:</span>
                 <span className="font-mono text-slate-900 dark:text-white">{formatCurrency(selectedOrder.subtotal)}</span>
@@ -301,19 +360,31 @@ export default function Orders() {
               </div>
             </div>
 
-            {/* Action Download */}
-            {selectedOrder.invoiceId && (
-              <div className="flex justify-end pt-2">
+            {/* Actions */}
+            <div className="flex flex-wrap items-center justify-between gap-3 pt-2">
+              {selectedOrder.orderStatus === 'pending' ? (
+                <Button
+                  variant="danger"
+                  size="md"
+                  disabled={cancellingId === selectedOrder._id}
+                  onClick={() => handleCancelOrder(selectedOrder._id, selectedOrder.orderNumber)}
+                >
+                  {cancellingId === selectedOrder._id ? 'Cancelling Order...' : 'Cancel This Order'}
+                </Button>
+              ) : <div />}
+
+              {(selectedOrder.invoiceId || selectedOrder.invoice?._id) && (
                 <Button
                   variant="primary"
                   size="md"
                   icon={Download}
-                  onClick={() => orderService.downloadInvoicePdf(selectedOrder.invoiceId, selectedOrder.orderNumber)}
+                  disabled={downloadingId === (selectedOrder.invoiceId || selectedOrder.invoice?._id)}
+                  onClick={() => handleDownloadInvoice(selectedOrder.invoiceId || selectedOrder.invoice?._id, selectedOrder.orderNumber)}
                 >
                   Download Official Tax Invoice (PDF)
                 </Button>
-              </div>
-            )}
+              )}
+            </div>
           </div>
         </Modal>
       )}

@@ -110,7 +110,19 @@ const getExpiryAlerts = async (daysThreshold = 30) => {
 const adjustStock = async (userId, { productId, newQuantity, reason, ipAddress = '' }) => {
   let inventory = await Inventory.findOne({ productId });
   if (!inventory) {
-    throw AppError.notFound(`Inventory record not found for product '${productId}'`);
+    const product = await Product.findById(productId);
+    if (!product) {
+      throw AppError.notFound(`Product with ID '${productId}' not found`);
+    }
+    // Auto-initialize inventory record if missing
+    inventory = new Inventory({
+      productId,
+      totalStock: 0,
+      reorderLevel: 10,
+      optimalStock: 50,
+      shelfLocation: 'General Shelf',
+      batches: [],
+    });
   }
 
   const previousState = {
@@ -118,14 +130,14 @@ const adjustStock = async (userId, { productId, newQuantity, reason, ipAddress =
     batches: inventory.batches.map((b) => ({ ...b.toObject() })),
   };
 
-  const targetQty = Number(newQuantity);
+  const targetQty = Math.max(0, Number(newQuantity) || 0);
 
-  // If adjusting quantity directly, adjust the latest batch or create an adjustment batch
-  if (inventory.batches.length > 0) {
-    // Pro-rate or set primary active batch
-    const diff = targetQty - inventory.totalStock;
-    inventory.batches[0].quantity = Math.max(0, inventory.batches[0].quantity + diff);
-  } else {
+  if (targetQty === 0) {
+    // Zero out all active batches
+    inventory.batches.forEach((b) => {
+      b.quantity = 0;
+    });
+  } else if (inventory.batches.length === 0) {
     // Create new baseline batch
     const defaultExpiry = new Date();
     defaultExpiry.setDate(defaultExpiry.getDate() + 90);
@@ -136,6 +148,24 @@ const adjustStock = async (userId, { productId, newQuantity, reason, ipAddress =
       costPrice: 0,
       receivedDate: new Date(),
     });
+  } else {
+    const currentTotal = inventory.batches.reduce((sum, b) => sum + Math.max(0, b.quantity), 0);
+    const diff = targetQty - currentTotal;
+
+    if (diff > 0) {
+      // Allocate additional stock to the latest batch
+      const targetBatch = inventory.batches[inventory.batches.length - 1];
+      targetBatch.quantity += diff;
+    } else if (diff < 0) {
+      // Drain reduction sequentially across batches from newest backwards
+      let remainingToDrain = Math.abs(diff);
+      for (let i = inventory.batches.length - 1; i >= 0 && remainingToDrain > 0; i--) {
+        const batchQty = Math.max(0, inventory.batches[i].quantity);
+        const drain = Math.min(batchQty, remainingToDrain);
+        inventory.batches[i].quantity -= drain;
+        remainingToDrain -= drain;
+      }
+    }
   }
 
   inventory.lastAuditedAt = new Date();
@@ -160,12 +190,14 @@ const adjustStock = async (userId, { productId, newQuantity, reason, ipAddress =
 
   // Check if now low stock
   if (inventory.totalStock <= inventory.reorderLevel) {
-    emitNotification({ role: 'inventory_manager' }, NOTIFICATION_TYPES.LOW_STOCK, {
+    const alertData = {
       productId: inventory.productId,
       totalStock: inventory.totalStock,
       reorderLevel: inventory.reorderLevel,
       message: `Stock adjusted to low level: ${inventory.totalStock} units`,
-    });
+    };
+    emitNotification({ role: 'inventory_manager' }, NOTIFICATION_TYPES.LOW_STOCK, alertData);
+    emitNotification({ role: 'admin' }, NOTIFICATION_TYPES.LOW_STOCK, alertData);
   }
 
   return inventory;
@@ -233,6 +265,7 @@ const deductStockFEFO = async (productId, requestedQuantity, session = null) => 
       // Defer notification if in active transaction; emit immediately only in non-transactional caller
       if (!session && isLowStock) {
         emitNotification({ role: 'inventory_manager' }, NOTIFICATION_TYPES.LOW_STOCK, lowStockAlert);
+        emitNotification({ role: 'admin' }, NOTIFICATION_TYPES.LOW_STOCK, lowStockAlert);
       }
 
       return {

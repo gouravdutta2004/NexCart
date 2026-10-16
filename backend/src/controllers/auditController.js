@@ -1,11 +1,10 @@
 const AuditLog = require('../models/AuditLog');
 const ApiResponse = require('../utils/apiResponse');
+const { parsePagination } = require('../utils/paginationHelper');
 
 const getAuditLogs = async (req, res, next) => {
   try {
-    const page = parseInt(req.query.page, 10) || 1;
-    const limit = parseInt(req.query.limit, 10) || 20;
-    const skip = (page - 1) * limit;
+    const { page, limit, skip } = parsePagination(req.query, 20, 100);
 
     const query = {};
     if (req.query.module) query.module = req.query.module;

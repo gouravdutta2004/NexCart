@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { 
   ShoppingCart, 
@@ -18,26 +18,113 @@ import {
   ScanLine,
   ShieldCheck,
   Tag,
-  Users
+  Users,
+  Key,
+  Lock,
+  CheckCircle2,
+  AlertCircle,
+  Receipt
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { useCart } from '../../context/CartContext';
 import { useTheme } from '../../context/ThemeContext';
+import authService from '../../services/authService';
 import CartDrawer from '../cart/CartDrawer';
 import NotificationDrawer from '../ui/NotificationDrawer';
 import { ROLE_LABELS, ROLES } from '../../utils/constants';
 import StatusBadge from '../ui/StatusBadge';
+import useSocket from '../../hooks/useSocket';
 
 export default function Navbar() {
-  const { user, isAuthenticated, logout } = useAuth();
+  const { user, isAuthenticated, logout, updateUser } = useAuth();
   const { itemCount, openDrawer } = useCart();
   const { isDark, toggleTheme } = useTheme();
+  const { notifications, clearNotifications } = useSocket();
   const navigate = useNavigate();
   const location = useLocation();
 
   const [showNotifications, setShowNotifications] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [userDropdownOpen, setUserDropdownOpen] = useState(false);
+  const [hasViewedNotifications, setHasViewedNotifications] = useState(false);
+  const [hasClearedNotifications, setHasClearedNotifications] = useState(false);
+  const prevNotifCountRef = useRef(notifications.length);
+
+  // Profile & Password modal states
+  const [showProfileModal, setShowProfileModal] = useState(false);
+  const [profileData, setProfileData] = useState({ name: '', phone: '' });
+  const [passwordData, setPasswordData] = useState({ currentPassword: '', newPassword: '', confirmPassword: '' });
+  const [profileMsg, setProfileMsg] = useState(null);
+  const [updatingDetails, setUpdatingDetails] = useState(false);
+  const [updatingPassword, setUpdatingPassword] = useState(false);
+
+  const handleOpenProfile = () => {
+    setUserDropdownOpen(false);
+    setMobileMenuOpen(false);
+    setProfileData({ name: user?.name || '', phone: user?.phone || '' });
+    setPasswordData({ currentPassword: '', newPassword: '', confirmPassword: '' });
+    setProfileMsg(null);
+    setShowProfileModal(true);
+  };
+
+  const handleUpdateDetails = async (e) => {
+    e.preventDefault();
+    setUpdatingDetails(true);
+    setProfileMsg(null);
+    try {
+      const res = await authService.updateProfile({
+        name: profileData.name,
+        phone: profileData.phone,
+      });
+      if (res?.data?.user) {
+        updateUser(res.data.user);
+      }
+      setProfileMsg({ type: 'success', text: 'Personal details updated successfully!' });
+    } catch (err) {
+      setProfileMsg({ type: 'error', text: err.message || 'Failed to update details' });
+    } finally {
+      setUpdatingDetails(false);
+    }
+  };
+
+  const handleChangePassword = async (e) => {
+    e.preventDefault();
+    setProfileMsg(null);
+    if (!passwordData.currentPassword) {
+      setProfileMsg({ type: 'error', text: 'Please enter your current password' });
+      return;
+    }
+    if (!passwordData.newPassword || passwordData.newPassword.length < 6) {
+      setProfileMsg({ type: 'error', text: 'New password must be at least 6 characters' });
+      return;
+    }
+    if (passwordData.newPassword !== passwordData.confirmPassword) {
+      setProfileMsg({ type: 'error', text: 'New password and confirm password do not match' });
+      return;
+    }
+
+    setUpdatingPassword(true);
+    try {
+      await authService.updateProfile({
+        currentPassword: passwordData.currentPassword,
+        newPassword: passwordData.newPassword,
+      });
+      setPasswordData({ currentPassword: '', newPassword: '', confirmPassword: '' });
+      setProfileMsg({ type: 'success', text: 'Password changed successfully!' });
+    } catch (err) {
+      setProfileMsg({ type: 'error', text: err.message || 'Failed to change password' });
+    } finally {
+      setUpdatingPassword(false);
+    }
+  };
+
+  useEffect(() => {
+    if (notifications.length > prevNotifCountRef.current) {
+      setHasViewedNotifications(false);
+      setHasClearedNotifications(false);
+    }
+    prevNotifCountRef.current = notifications.length;
+  }, [notifications.length]);
 
   const handleLogout = () => {
     logout();
@@ -50,12 +137,41 @@ export default function Navbar() {
     return false;
   };
 
+  const handleOpenNotifications = () => {
+    setShowNotifications(true);
+    setHasViewedNotifications(true);
+  };
+
+  const handleClearAll = () => {
+    clearNotifications();
+    setHasClearedNotifications(true);
+    setHasViewedNotifications(true);
+  };
+
+  const roleScopedNotifications = notifications.filter((item) => {
+    if (!user?.role || user.role === 'admin') return true;
+    if (user.role === 'inventory_manager') return item.category === 'inventory' || item.category === 'procurement';
+    if (user.role === 'cashier') return item.category === 'pos' || item.category === 'held_carts';
+    if (user.role === 'customer') return item.category === 'orders' || item.category === 'promotions';
+    return item.category === 'promotions' || item.category === 'store';
+  });
+
+  const unreadCount = hasClearedNotifications || hasViewedNotifications
+    ? 0
+    : roleScopedNotifications.length > 0
+      ? roleScopedNotifications.filter((n) => n.unread !== false).length
+      : 1; // 1 unread indicator for initial role-specific welcome feed
+
   return (
     <>
       <CartDrawer />
       <NotificationDrawer
         isOpen={showNotifications}
         onClose={() => setShowNotifications(false)}
+        notifications={hasClearedNotifications ? [] : roleScopedNotifications}
+        onClearAll={handleClearAll}
+        role={user?.role}
+        userName={user?.name}
       />
 
       <header className="sticky top-0 z-40 w-full bg-white/90 dark:bg-slate-900/90 backdrop-blur-md border-b border-slate-200/80 dark:border-slate-800 transition-colors">
@@ -64,9 +180,11 @@ export default function Navbar() {
           {/* Brand Logo */}
           <div className="flex items-center gap-3">
             <Link to="/" className="flex items-center space-x-3 group select-none">
-              <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl bg-gradient-to-tr from-emerald-600 to-teal-500 flex items-center justify-center text-white shadow-md shadow-emerald-500/20 group-hover:scale-105 transition-transform">
-                <ShoppingCart className="w-5 h-5 sm:w-5.5 sm:h-5.5 stroke-[2.2]" />
-              </div>
+              <img
+                src="/logo.png"
+                alt="NexCart Logo"
+                className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl object-contain drop-shadow-sm group-hover:scale-105 transition-transform"
+              />
               <div className="flex flex-col">
                 <span className="text-lg sm:text-xl font-extrabold tracking-tight text-slate-900 dark:text-white flex items-center">
                   Nex<span className="text-emerald-600 dark:text-emerald-400">Cart</span>
@@ -206,12 +324,18 @@ export default function Navbar() {
             {/* Notification Bell */}
             <button
               type="button"
-              onClick={() => setShowNotifications(true)}
+              onClick={handleOpenNotifications}
               aria-label="View notifications"
               className="relative p-2 rounded-xl text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
             >
               <Bell className="w-4.5 h-4.5 stroke-[2]" />
-              <span className="absolute top-1.5 right-1.5 w-2 h-2 rounded-full bg-emerald-500 ring-2 ring-white dark:ring-slate-900" />
+              {unreadCount > 0 ? (
+                <span className="absolute top-1 right-1 flex items-center justify-center min-w-[16px] h-4 px-1 rounded-full bg-emerald-600 text-white text-[9px] font-black ring-2 ring-white dark:ring-slate-900 animate-pulse">
+                  {unreadCount > 9 ? '9+' : unreadCount}
+                </span>
+              ) : (
+                <span className="absolute top-1.5 right-1.5 w-2 h-2 rounded-full bg-slate-300 dark:bg-slate-700 ring-2 ring-white dark:ring-slate-900" />
+              )}
             </button>
 
             {/* Shopping Cart Button */}
@@ -299,6 +423,16 @@ export default function Navbar() {
                       </Link>
                     )}
 
+                    {(user.role === ROLES.ADMIN || user.role === ROLES.CASHIER) && (
+                      <Link
+                        to="/admin/orders"
+                        className="flex items-center gap-2 px-4 py-2 text-xs font-semibold text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+                      >
+                        <Receipt className="w-4 h-4 text-purple-500" />
+                        Store Orders & Fulfillment
+                      </Link>
+                    )}
+
                     <Link
                       to="/customer/orders"
                       className="flex items-center gap-2 px-4 py-2 text-xs font-semibold text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
@@ -306,6 +440,15 @@ export default function Navbar() {
                       <History className="w-4 h-4 text-emerald-500" />
                       Order History & Invoices
                     </Link>
+
+                    <button
+                      type="button"
+                      onClick={handleOpenProfile}
+                      className="w-full flex items-center gap-2 px-4 py-2 text-xs font-semibold text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors text-left"
+                    >
+                      <UserIcon className="w-4 h-4 text-blue-500" />
+                      Profile & Security
+                    </button>
 
                     <div className="border-t border-slate-100 dark:border-slate-800 my-1" />
 
@@ -383,6 +526,17 @@ export default function Navbar() {
                   </Link>
                 )}
 
+                {(user.role === ROLES.ADMIN || user.role === ROLES.CASHIER) && (
+                  <Link
+                    to="/admin/orders"
+                    onClick={() => setMobileMenuOpen(false)}
+                    className="flex items-center gap-2 px-3 py-2 text-sm font-semibold rounded-xl text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800"
+                  >
+                    <Receipt className="w-4 h-4 text-purple-500" />
+                    Store Orders & Fulfillment
+                  </Link>
+                )}
+
                 {(user.role === ROLES.ADMIN || user.role === ROLES.INVENTORY_MANAGER) && (
                   <Link
                     to="/inventory"
@@ -413,11 +567,163 @@ export default function Navbar() {
                   <History className="w-4 h-4 text-emerald-500" />
                   My Orders & Invoices
                 </Link>
+
+                <button
+                  type="button"
+                  onClick={handleOpenProfile}
+                  className="w-full flex items-center gap-2 px-3 py-2 text-sm font-semibold rounded-xl text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 text-left"
+                >
+                  <UserIcon className="w-4 h-4 text-blue-500" />
+                  My Profile & Security
+                </button>
               </>
             )}
           </div>
         )}
       </header>
+
+      {/* Profile & Security Modal */}
+      {showProfileModal && (
+        <div className="fixed inset-0 z-50 bg-slate-900/60 dark:bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl max-w-md w-full p-6 shadow-2xl relative max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between pb-4 border-b border-slate-200 dark:border-slate-800 mb-4">
+              <div className="flex items-center gap-2">
+                <div className="w-8 h-8 rounded-xl bg-emerald-50 dark:bg-emerald-950/60 text-emerald-600 dark:text-emerald-400 flex items-center justify-center">
+                  <UserIcon className="w-4 h-4" />
+                </div>
+                <div>
+                  <h3 className="text-base font-bold text-slate-900 dark:text-white leading-tight">
+                    My Profile & Security
+                  </h3>
+                  <span className="text-[11px] text-slate-500 capitalize">
+                    {ROLE_LABELS[user?.role] || user?.role} Account
+                  </span>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowProfileModal(false)}
+                className="p-1.5 rounded-xl text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {profileMsg && (
+              <div
+                className={`p-3 rounded-xl border flex items-center gap-2 mb-4 text-xs font-semibold ${
+                  profileMsg.type === 'success'
+                    ? 'bg-emerald-50 dark:bg-emerald-950/60 border-emerald-200 dark:border-emerald-800 text-emerald-800 dark:text-emerald-200'
+                    : 'bg-rose-50 dark:bg-rose-950/60 border-rose-200 dark:border-rose-800 text-rose-800 dark:text-rose-200'
+                }`}
+              >
+                {profileMsg.type === 'success' ? (
+                  <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                ) : (
+                  <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />
+                )}
+                <span>{profileMsg.text}</span>
+              </div>
+            )}
+
+            {/* Profile Information Form */}
+            <form onSubmit={handleUpdateDetails} className="space-y-3.5 mb-6">
+              <h4 className="text-xs font-bold uppercase tracking-wider text-slate-400">Personal Information</h4>
+              <div>
+                <label className="block text-[11px] font-semibold text-slate-500 mb-1">Email Address (Read-only)</label>
+                <input
+                  type="email"
+                  disabled
+                  value={user?.email || ''}
+                  className="w-full px-3 py-2 bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-slate-500 font-mono text-xs cursor-not-allowed"
+                />
+              </div>
+
+              <div>
+                <label className="block text-[11px] font-semibold text-slate-700 dark:text-slate-300 mb-1">Full Name</label>
+                <input
+                  type="text"
+                  required
+                  value={profileData.name}
+                  onChange={(e) => setProfileData({ ...profileData, name: e.target.value })}
+                  placeholder="Your full name"
+                  className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl text-slate-900 dark:text-white text-xs focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                />
+              </div>
+
+              <div>
+                <label className="block text-[11px] font-semibold text-slate-700 dark:text-slate-300 mb-1">Phone Number</label>
+                <input
+                  type="tel"
+                  value={profileData.phone}
+                  onChange={(e) => setProfileData({ ...profileData, phone: e.target.value })}
+                  placeholder="+91 98765 43210"
+                  className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl text-slate-900 dark:text-white text-xs focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                />
+              </div>
+
+              <button
+                type="submit"
+                disabled={updatingDetails}
+                className="w-full py-2 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold transition-colors disabled:opacity-50"
+              >
+                {updatingDetails ? 'Saving...' : 'Update Details'}
+              </button>
+            </form>
+
+            {/* Change Password Form */}
+            <form onSubmit={handleChangePassword} className="space-y-3.5 pt-4 border-t border-slate-100 dark:border-slate-800">
+              <h4 className="text-xs font-bold uppercase tracking-wider text-slate-400 flex items-center gap-1.5">
+                <Lock className="w-3.5 h-3.5" />
+                Change Password
+              </h4>
+
+              <div>
+                <label className="block text-[11px] font-semibold text-slate-700 dark:text-slate-300 mb-1">Current Password</label>
+                <input
+                  type="password"
+                  value={passwordData.currentPassword}
+                  onChange={(e) => setPasswordData({ ...passwordData, currentPassword: e.target.value })}
+                  placeholder="••••••••"
+                  className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl text-slate-900 dark:text-white text-xs focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="block text-[11px] font-semibold text-slate-700 dark:text-slate-300 mb-1">New Password</label>
+                  <input
+                    type="password"
+                    value={passwordData.newPassword}
+                    onChange={(e) => setPasswordData({ ...passwordData, newPassword: e.target.value })}
+                    placeholder="Min 6 chars"
+                    className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl text-slate-900 dark:text-white text-xs focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-[11px] font-semibold text-slate-700 dark:text-slate-300 mb-1">Confirm New</label>
+                  <input
+                    type="password"
+                    value={passwordData.confirmPassword}
+                    onChange={(e) => setPasswordData({ ...passwordData, confirmPassword: e.target.value })}
+                    placeholder="Repeat password"
+                    className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl text-slate-900 dark:text-white text-xs focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                  />
+                </div>
+              </div>
+
+              <button
+                type="submit"
+                disabled={updatingPassword}
+                className="w-full py-2 px-4 rounded-xl bg-slate-800 dark:bg-slate-700 hover:bg-slate-900 dark:hover:bg-slate-600 text-white text-xs font-bold transition-colors disabled:opacity-50"
+              >
+                {updatingPassword ? 'Changing Password...' : 'Change Password'}
+              </button>
+            </form>
+          </div>
+        </div>
+      )}
     </>
   );
 }

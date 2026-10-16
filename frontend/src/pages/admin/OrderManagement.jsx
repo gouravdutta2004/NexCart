@@ -25,9 +25,11 @@ import Badge from '../../components/ui/Badge';
 import StatusBadge from '../../components/ui/StatusBadge';
 import Pagination from '../../components/ui/Pagination';
 import { useAuth } from '../../context/AuthContext';
+import useSocket from '../../hooks/useSocket';
 
 export default function OrderManagement() {
   const { user } = useAuth();
+  const { on, off } = useSocket();
   const [orders, setOrders] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -46,7 +48,21 @@ export default function OrderManagement() {
 
   useEffect(() => {
     fetchOrders();
-  }, [page, statusFilter, channelFilter]);
+
+    const handleOrderEvent = () => {
+      fetchOrders();
+    };
+
+    on('new_order', handleOrderEvent);
+    on('order_status', handleOrderEvent);
+    on('pos_completed', handleOrderEvent);
+
+    return () => {
+      off('new_order', handleOrderEvent);
+      off('order_status', handleOrderEvent);
+      off('pos_completed', handleOrderEvent);
+    };
+  }, [page, statusFilter, channelFilter, on, off]);
 
   const fetchOrders = async () => {
     setLoading(true);

@@ -100,4 +100,4 @@
 - **`PATCH /:id/toggle`**: Toggle discount status between Active and Disabled.
 
 #### Compliance & Audit Logging (`/api/v1/audit-logs`)
-- **`GET /`**: Immutable system audit trail capturing user, action, module, previousState, and newState JSON diffs (Admin).
+- **`GET /`**: Application-level append-only system audit trail capturing user, action, module, previousState, and newState JSON diffs (Admin).

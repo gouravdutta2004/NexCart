@@ -1,13 +1,13 @@
 const express = require('express');
 const router = express.Router();
 const productController = require('../controllers/productController');
-const { protect } = require('../middleware/authMiddleware');
+const { protect, optionalProtect } = require('../middleware/authMiddleware');
 const { authorize } = require('../middleware/roleMiddleware');
 const { validateProduct } = require('../validators/productValidator');
 const { ROLES } = require('../utils/constants');
 
-// Public catalog routes
-router.get('/', productController.getProducts);
+// Public catalog routes (optionalProtect identifies Admins for includeInactive)
+router.get('/', optionalProtect, productController.getProducts);
 
 // Fast Barcode Scanner Lookup for POS & Self-Checkout
 router.get('/barcode/:code', productController.getProductByBarcode);

@@ -14,7 +14,9 @@ import {
   ArrowLeft,
   Sparkles,
   Tag,
-  IndianRupee
+  IndianRupee,
+  Trash2,
+  RotateCcw
 } from 'lucide-react';
 import productService from '../../services/productService';
 import categoryService from '../../services/categoryService';
@@ -30,8 +32,17 @@ export default function ProductManagement() {
   const [categories, setCategories] = useState([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
+  const [debouncedSearch, setDebouncedSearch] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('');
+  const [statusFilter, setStatusFilter] = useState('active'); // active | archived | all
   const [pagination, setPagination] = useState({ page: 1, totalPages: 1, total: 0 });
+
+  useEffect(() => {
+    const handler = setTimeout(() => {
+      setDebouncedSearch(search);
+    }, 300);
+    return () => clearTimeout(handler);
+  }, [search]);
 
   // Modal State
   const [showModal, setShowModal] = useState(false);
@@ -61,8 +72,9 @@ export default function ProductManagement() {
       setLoading(true);
       const [prodRes, catRes] = await Promise.all([
         productService.getProducts({
-          search,
+          search: debouncedSearch,
           categoryId: selectedCategory,
+          includeInactive: statusFilter !== 'active',
           page,
           limit: 15,
         }),
@@ -70,7 +82,11 @@ export default function ProductManagement() {
       ]);
 
       const cats = catRes?.categories || catRes?.data?.categories || [];
-      setProducts(prodRes?.data?.products || prodRes?.products || []);
+      let prods = prodRes?.data?.products || prodRes?.products || [];
+      if (statusFilter === 'archived') {
+        prods = prods.filter((p) => p.isActive === false);
+      }
+      setProducts(prods);
       setPagination(prodRes?.meta?.pagination || { page: 1, totalPages: 1, total: 0 });
       setCategories(cats);
       if (cats.length > 0 && !formData.categoryId) {
@@ -85,7 +101,17 @@ export default function ProductManagement() {
 
   useEffect(() => {
     loadData(1);
-  }, [search, selectedCategory]);
+  }, [debouncedSearch, selectedCategory, statusFilter]);
+
+  const handleRestoreProduct = async (prod) => {
+    try {
+      await productService.updateProduct(prod._id, { isActive: true });
+      setMessage({ type: 'success', text: `Product '${prod.name}' restored and marked active.` });
+      loadData(pagination.page);
+    } catch (err) {
+      setMessage({ type: 'error', text: err.message || 'Failed to restore product' });
+    }
+  };
 
   const handleOpenAdd = () => {
     setEditingProduct(null);
@@ -140,6 +166,17 @@ export default function ProductManagement() {
       setMessage({ type: 'error', text: err.message || 'Operation failed' });
     } finally {
       setSubmitting(false);
+    }
+  };
+
+  const handleDeleteProduct = async (prod) => {
+    if (!window.confirm(`Are you sure you want to remove '${prod.name}' from the supermarket catalog?`)) return;
+    try {
+      await productService.deleteProduct(prod._id);
+      setMessage({ type: 'success', text: `Product '${prod.name}' removed successfully.` });
+      loadData(pagination.page);
+    } catch (err) {
+      setMessage({ type: 'error', text: err.message || 'Failed to remove product' });
     }
   };
 
@@ -349,12 +386,12 @@ export default function ProductManagement() {
             />
           </div>
 
-          <div className="flex items-center gap-3 w-full sm:w-auto">
+          <div className="flex flex-col sm:flex-row items-center gap-3 w-full sm:w-auto">
             <Filter className="w-4 h-4 text-slate-400 hidden sm:block" />
             <select
               value={selectedCategory}
               onChange={(e) => setSelectedCategory(e.target.value)}
-              className="w-full sm:w-56 px-3.5 py-2.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl text-slate-900 dark:text-white text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 shadow-sm"
+              className="w-full sm:w-52 px-3.5 py-2.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl text-slate-900 dark:text-white text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 shadow-sm"
             >
               <option value="">All Categories ({pagination.total})</option>
               {categories.map((c) => (
@@ -362,6 +399,16 @@ export default function ProductManagement() {
                   {c.name}
                 </option>
               ))}
+            </select>
+
+            <select
+              value={statusFilter}
+              onChange={(e) => setStatusFilter(e.target.value)}
+              className="w-full sm:w-36 px-3.5 py-2.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl text-slate-900 dark:text-white text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 shadow-sm"
+            >
+              <option value="active">Active Only</option>
+              <option value="archived">Archived Only</option>
+              <option value="all">All Products</option>
             </select>
           </div>
         </div>
@@ -414,7 +461,14 @@ export default function ProductManagement() {
                           <div className="text-[10px] text-slate-400">{prod.sku}</div>
                         </td>
                         <td className="py-3.5 px-4">
-                          <div className="font-semibold text-slate-900 dark:text-white">{prod.name}</div>
+                          <div className="font-semibold text-slate-900 dark:text-white flex items-center gap-1.5">
+                            {prod.name}
+                            {prod.isActive === false && (
+                              <span className="px-1.5 py-0.5 rounded text-[10px] font-semibold bg-rose-100 dark:bg-rose-950/60 text-rose-700 dark:text-rose-300">
+                                Archived
+                              </span>
+                            )}
+                          </div>
                           <div className="text-xs text-slate-500 dark:text-slate-400">{prod.brand} • {prod.unit}</div>
                         </td>
                         <td className="py-3.5 px-4">
@@ -453,7 +507,7 @@ export default function ProductManagement() {
                             {prod.isExpiryTracked ? 'Tracked' : 'Non-perishable'}
                           </span>
                         </td>
-                        <td className="py-3.5 px-4 text-right">
+                        <td className="py-3.5 px-4 text-right space-x-1">
                           <button
                             type="button"
                             onClick={() => handleOpenEdit(prod)}
@@ -462,6 +516,27 @@ export default function ProductManagement() {
                           >
                             <Edit3 className="w-4 h-4" />
                           </button>
+                          {user?.role === 'admin' && (
+                            prod.isActive === false ? (
+                              <button
+                                type="button"
+                                onClick={() => handleRestoreProduct(prod)}
+                                className="p-1.5 rounded-lg text-slate-400 hover:text-emerald-600 dark:hover:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-950/50 transition-colors"
+                                title="Restore Product"
+                              >
+                                <RotateCcw className="w-4 h-4" />
+                              </button>
+                            ) : (
+                              <button
+                                type="button"
+                                onClick={() => handleDeleteProduct(prod)}
+                                className="p-1.5 rounded-lg text-slate-400 hover:text-rose-600 dark:hover:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/50 transition-colors"
+                                title="Archive / Delete Product"
+                              >
+                                <Trash2 className="w-4 h-4" />
+                              </button>
+                            )
+                          )}
                         </td>
                       </tr>
                     );

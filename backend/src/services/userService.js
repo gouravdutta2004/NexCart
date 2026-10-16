@@ -3,14 +3,13 @@ const AuditLog = require('../models/AuditLog');
 const AppError = require('../utils/apiError');
 const { AUDIT_MODULES, ROLES } = require('../utils/constants');
 const { escapeRegex } = require('../utils/sanitize');
+const { parsePagination } = require('../utils/paginationHelper');
 
 /**
  * Get all users with filtering, search, and pagination (Admin only)
  */
 const getAllUsers = async ({ page = 1, limit = 20, role = '', status = '', search = '' }) => {
-  const pageNum = parseInt(page, 10) || 1;
-  const limitNum = parseInt(limit, 10) || 20;
-  const skip = (pageNum - 1) * limitNum;
+  const { page: pageNum, limit: limitNum, skip } = parsePagination({ page, limit }, 20, 100);
 
   const query = {};
   if (role) query.role = role;

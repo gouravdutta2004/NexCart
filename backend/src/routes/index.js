@@ -33,4 +33,24 @@ router.use('/discounts', discountRoutes);
 router.use('/audit-logs', auditRoutes);
 router.use('/users', userRoutes);
 
+// Standardized health check endpoint
+const { getDBStatus } = require('../config/db');
+const ApiResponse = require('../utils/apiResponse');
+
+router.get('/health', (req, res) => {
+  const dbStatus = getDBStatus();
+  return ApiResponse.success(res, {
+    message: 'NexCart System is Operational',
+    data: {
+      status: 'UP',
+      timestamp: new Date().toISOString(),
+      uptimeSeconds: Math.floor(process.uptime()),
+      database: dbStatus,
+      environment: process.env.NODE_ENV || 'development',
+      nodeVersion: process.version,
+      memoryUsageMB: Math.round(process.memoryUsage().rss / (1024 * 1024)),
+    },
+  });
+});
+
 module.exports = router;

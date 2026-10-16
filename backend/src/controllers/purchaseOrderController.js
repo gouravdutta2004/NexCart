@@ -54,9 +54,28 @@ const receivePurchaseOrder = async (req, res, next) => {
   }
 };
 
+const cancelPurchaseOrder = async (req, res, next) => {
+  try {
+    const ipAddress = req.ip || req.connection?.remoteAddress || '';
+    const purchaseOrder = await purchaseOrderService.cancelPurchaseOrder(
+      req.user._id,
+      req.params.id,
+      req.body.reason,
+      ipAddress
+    );
+    return ApiResponse.success(res, {
+      message: `Purchase Order ${purchaseOrder.poNumber} has been cancelled successfully`,
+      data: { purchaseOrder },
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
 module.exports = {
   getPurchaseOrders,
   getPurchaseOrder,
   createPurchaseOrder,
   receivePurchaseOrder,
+  cancelPurchaseOrder,
 };

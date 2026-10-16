@@ -42,8 +42,16 @@ export default function UserManagement() {
 
   // Filters & Search
   const [searchTerm, setSearchTerm] = useState('');
+  const [debouncedSearchTerm, setDebouncedSearchTerm] = useState('');
   const [selectedRole, setSelectedRole] = useState('');
   const [selectedStatus, setSelectedStatus] = useState('');
+
+  useEffect(() => {
+    const handler = setTimeout(() => {
+      setDebouncedSearchTerm(searchTerm);
+    }, 300);
+    return () => clearTimeout(handler);
+  }, [searchTerm]);
 
   // Modals
   const [showCreateModal, setShowCreateModal] = useState(false);
@@ -71,7 +79,7 @@ export default function UserManagement() {
     setLoading(true);
     try {
       const res = await userService.getAllUsers({
-        search: searchTerm,
+        search: debouncedSearchTerm,
         role: selectedRole,
         status: selectedStatus,
       });
@@ -86,7 +94,7 @@ export default function UserManagement() {
 
   useEffect(() => {
     fetchUsers();
-  }, [searchTerm, selectedRole, selectedStatus]);
+  }, [debouncedSearchTerm, selectedRole, selectedStatus]);
 
   const handleCreateSubmit = async (e) => {
     e.preventDefault();

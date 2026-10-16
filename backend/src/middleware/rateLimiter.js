@@ -25,7 +25,20 @@ const authRateLimiter = rateLimit({
   },
 });
 
+const posValidationRateLimiter = rateLimit({
+  windowMs: 60 * 1000, // 1 minute
+  max: 60, // 60 attempts per minute
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: {
+    success: false,
+    statusCode: 429,
+    message: 'Too many POS validation requests. Please slow down.',
+  },
+});
+
 module.exports = {
   globalRateLimiter,
   authRateLimiter,
+  posValidationRateLimiter,
 };

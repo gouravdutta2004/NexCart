@@ -29,7 +29,7 @@ const addToCart = async (req, res, next) => {
 
 const updateCartItem = async (req, res, next) => {
   try {
-    const { productId } = req.params;
+    const productId = req.params.productId || req.body.productId;
     const { quantity } = req.body;
     const cart = await cartService.updateCartItem(req.user._id, productId, quantity);
 
@@ -44,7 +44,7 @@ const updateCartItem = async (req, res, next) => {
 
 const removeFromCart = async (req, res, next) => {
   try {
-    const { productId } = req.params;
+    const productId = req.params.productId || req.body.productId;
     const cart = await cartService.removeFromCart(req.user._id, productId);
 
     return ApiResponse.success(res, {

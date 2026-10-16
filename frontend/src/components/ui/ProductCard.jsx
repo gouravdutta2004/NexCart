@@ -8,10 +8,28 @@ import {
   Check, 
   AlertTriangle,
   Sparkles,
-  Tag
+  Tag,
+  Milk,
+  Apple,
+  Wheat,
+  Coffee,
+  Cookie,
+  CookingPot,
+  Package
 } from 'lucide-react';
 import { formatCurrency } from '../../utils/formatters';
 import Badge from './Badge';
+
+const getCategoryIcon = (categoryName = '') => {
+  const norm = categoryName.toLowerCase();
+  if (norm.includes('dairy') || norm.includes('milk') || norm.includes('egg') || norm.includes('yogurt')) return Milk;
+  if (norm.includes('produce') || norm.includes('fruit') || norm.includes('veg') || norm.includes('apple')) return Apple;
+  if (norm.includes('bakery') || norm.includes('bread') || norm.includes('croissant')) return Wheat;
+  if (norm.includes('bev') || norm.includes('coffee') || norm.includes('juice') || norm.includes('tea')) return Coffee;
+  if (norm.includes('snack') || norm.includes('chip') || norm.includes('choco')) return Cookie;
+  if (norm.includes('pantry') || norm.includes('staple') || norm.includes('rice') || norm.includes('oil')) return CookingPot;
+  return Package;
+};
 
 export default function ProductCard({
   product,
@@ -24,6 +42,8 @@ export default function ProductCard({
   const [isWishlisted, setIsWishlisted] = useState(false);
   const [addedAnimation, setAddedAnimation] = useState(false);
   const [quantity, setQuantity] = useState(1);
+  const [imgLoaded, setImgLoaded] = useState(false);
+  const [imgError, setImgError] = useState(false);
 
   if (!product) return null;
 
@@ -41,6 +61,7 @@ export default function ProductCard({
   } = product;
 
   const categoryName = category?.name || categoryId?.name || (typeof category === 'string' ? category : 'Grocery');
+  const FallbackIcon = getCategoryIcon(categoryName);
 
   // Estimate a realistic MRP for discount display if not given
   const hasDiscount = Boolean(badgeText?.includes('DEAL') || badgeText?.includes('OFF') || product.isSmartDeal);
@@ -65,8 +86,7 @@ export default function ProductCard({
     setIsWishlisted(!isWishlisted);
   };
 
-  // Deterministic subtle image placeholder if no image provided
-  const placeholderBg = 'bg-gradient-to-br from-emerald-50 to-teal-50 dark:from-slate-800 dark:to-slate-850';
+  const showRealImage = Boolean(imageUrl && !imgError);
 
   return (
     <div
@@ -75,9 +95,11 @@ export default function ProductCard({
         group relative flex flex-col justify-between
         bg-white dark:bg-slate-900
         border border-slate-200/90 dark:border-slate-800
+        ring-1 ring-slate-900/5 dark:ring-white/5
         rounded-2xl sm:rounded-3xl p-4 sm:p-5
-        shadow-xs hover:shadow-lg hover:border-slate-300 dark:hover:border-slate-700
-        hover:-translate-y-1 transition-all duration-200
+        shadow-xs hover:shadow-xl hover:shadow-slate-900/5 dark:hover:shadow-black/30
+        hover:border-slate-300 dark:hover:border-slate-700
+        hover:-translate-y-1 transition-all duration-300
         ${onClick ? 'cursor-pointer' : ''}
         ${className}
       `}
@@ -115,29 +137,38 @@ export default function ProductCard({
           aria-label={isWishlisted ? 'Remove from wishlist' : 'Save to wishlist'}
           className={`
             absolute top-2.5 right-2.5 z-10 p-2 rounded-xl backdrop-blur-md
-            transition-all duration-150
+            transition-all duration-150 active:scale-90
             ${
               isWishlisted
-                ? 'bg-rose-50 dark:bg-rose-950/80 text-rose-500 scale-110'
-                : 'bg-white/80 dark:bg-slate-900/80 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:scale-105'
+                ? 'bg-rose-50 dark:bg-rose-950/80 text-rose-500 scale-110 shadow-sm'
+                : 'bg-white/85 dark:bg-slate-900/85 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:scale-105'
             }
           `}
         >
           <Heart className={`w-4 h-4 ${isWishlisted ? 'fill-current' : ''}`} />
         </button>
 
-        {/* Product Image */}
-        {imageUrl ? (
-          <img
-            src={imageUrl}
-            alt={name}
-            loading="lazy"
-            className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
-          />
+        {/* Product Image with Smooth Shimmer Loading & Fallback */}
+        {showRealImage ? (
+          <>
+            {!imgLoaded && (
+              <div className="absolute inset-0 bg-slate-100 dark:bg-slate-800 animate-pulse flex items-center justify-center">
+                <FallbackIcon className="w-8 h-8 text-slate-300 dark:text-slate-600" />
+              </div>
+            )}
+            <img
+              src={imageUrl}
+              alt={name}
+              loading="lazy"
+              onLoad={() => setImgLoaded(true)}
+              onError={() => setImgError(true)}
+              className={`w-full h-full object-cover group-hover:scale-105 transition-all duration-500 ${imgLoaded ? 'opacity-100 scale-100' : 'opacity-0 scale-95'}`}
+            />
+          </>
         ) : (
-          <div className={`w-full h-full flex flex-col items-center justify-center p-4 text-center ${placeholderBg}`}>
+          <div className="w-full h-full flex flex-col items-center justify-center p-4 text-center bg-gradient-to-br from-slate-50 to-emerald-50/40 dark:from-slate-800 dark:to-slate-900">
             <div className="w-12 h-12 rounded-2xl bg-emerald-500/10 dark:bg-emerald-400/10 text-emerald-600 dark:text-emerald-400 flex items-center justify-center mb-2 group-hover:scale-110 transition-transform">
-              <ShoppingCart className="w-6 h-6 stroke-[1.75]" />
+              <FallbackIcon className="w-6 h-6 stroke-[1.75]" />
             </div>
             <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500">
               {brand || 'NexCart'}

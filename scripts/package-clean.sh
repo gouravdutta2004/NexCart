@@ -12,13 +12,13 @@
 set -e
 
 PROJECT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-OUTPUT_ZIP="$(dirname "${PROJECT_DIR}")/NexCart-Submission-Clean.zip"
+OUTPUT_ZIP="${1:-${PROJECT_DIR}/NexCart-Submission-Clean.zip}"
 
 echo "📦 Packaging NexCart from: ${PROJECT_DIR}"
 echo "📁 Output target: ${OUTPUT_ZIP}"
 
 # Remove existing archives if present
-rm -f "${OUTPUT_ZIP}" "${PROJECT_DIR}"/*.zip 2>/dev/null || true
+rm -f "${OUTPUT_ZIP}" 2>/dev/null || true
 
 cd "${PROJECT_DIR}"
 
@@ -38,7 +38,8 @@ zip -r -q "${OUTPUT_ZIP}" . \
   -x "*.DS_Store" \
   -x "*Thumbs.db" \
   -x "*.log" \
-  -x "*logs/*" \
+  -x "*.venv*" \
+  -x "*__pycache__*" \
   -x "*.zip" \
   -x "*.tar.gz"
 

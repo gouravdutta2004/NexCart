@@ -1,3 +1,7 @@
+# ==============================================================================
+# NexCart — Git Ignore Configuration
+# ==============================================================================
+
 # Dependencies
 node_modules/
 .pnp
@@ -5,26 +9,32 @@ node_modules/
 
 # Testing & Coverage
 coverage/
+*.lcov
+.nyc_output/
 
-# Production Build
+# Production Build Artifacts
 dist/
 build/
+*.tsbuildinfo
 
-# Environment Variables
+# Environment & Local Secrets
 .env
 .env.local
 .env.development.local
 .env.test.local
 .env.production.local
+backend/.env
+frontend/.env
 
-# Logs
+# Server & Runtime Logs
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
+pnpm-debug.log*
 logs/
 *.log
 
-# OS & Editor
+# Operating System & Editor Artifacts
 .DS_Store
 Thumbs.db
 .vscode/
@@ -34,12 +44,33 @@ Thumbs.db
 *.njsproj
 *.sln
 *.sw?
+*.bak
+*.tmp
+
+# Compressed Archives & Packages
 *.zip
 *.tar.gz
+*.tgz
+*.rar
+NexCart-Submission-Clean.zip
 
-# Python
+# Presentations, Word Reports & Generated PDFs (Excluded from Source Control)
+*.pptx
+*.docx
+*.pdf
+NexCart_Project_Presentation.*
+NexCart_Project_Report.*
+report_assets/
+
+# Agent Tools, Workspaces & Customization Locks
+.agents/
+skills-lock.json
+.gemini/
+
+# Python Virtual Environments & Bytecode Caches
 .venv/
 venv/
+env/
 __pycache__/
 *.py[cod]
 *$py.class

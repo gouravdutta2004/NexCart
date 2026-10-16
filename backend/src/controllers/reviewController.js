@@ -27,7 +27,20 @@ const addReview = async (req, res, next) => {
   }
 };
 
+const deleteReview = async (req, res, next) => {
+  try {
+    const result = await reviewService.deleteReview(req.params.id, req.user._id, req.user.role);
+    return ApiResponse.success(res, {
+      message: 'Product review deleted successfully',
+      data: result,
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
 module.exports = {
   getProductReviews,
   addReview,
+  deleteReview,
 };

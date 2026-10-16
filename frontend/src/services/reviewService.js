@@ -15,6 +15,11 @@ export const reviewService = {
     const response = await api.post('/reviews', { productId, rating, comment });
     return response.data;
   },
+
+  deleteReview: async (id) => {
+    const response = await api.delete(`/reviews/${id}`);
+    return response.data;
+  },
 };
 
 export default reviewService;

@@ -91,6 +91,7 @@ const orderSchema = new mongoose.Schema(
       type: mongoose.Schema.Types.ObjectId,
       ref: 'User',
       default: null,
+      index: true,
     },
     items: [orderItemSchema],
     subtotal: {
@@ -156,5 +157,7 @@ const orderSchema = new mongoose.Schema(
 );
 
 orderSchema.index({ createdAt: -1 });
+orderSchema.index({ customer: 1, createdAt: -1 });
+orderSchema.index({ cashier: 1, createdAt: -1 });
 
 module.exports = mongoose.model('Order', orderSchema);

@@ -20,6 +20,11 @@ export const purchaseOrderService = {
     const response = await api.patch(`/purchase-orders/${id}/receive`);
     return response.data;
   },
+
+  cancelPurchaseOrder: async (id, reason = '') => {
+    const response = await api.patch(`/purchase-orders/${id}/cancel`, { reason });
+    return response.data;
+  },
 };
 
 export default purchaseOrderService;

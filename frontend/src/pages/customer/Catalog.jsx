@@ -26,7 +26,8 @@ import {
   Plus,
   Minus,
   ArrowRight,
-  Clock
+  Clock,
+  Trash2
 } from 'lucide-react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
 import productService from '../../services/productService';
@@ -34,6 +35,7 @@ import categoryService from '../../services/categoryService';
 import reviewService from '../../services/reviewService';
 import { useCart } from '../../context/CartContext';
 import { useAuth } from '../../context/AuthContext';
+import { useToast } from '../../context/ToastContext';
 import { formatCurrency, formatDate } from '../../utils/formatters';
 
 export default function Catalog() {
@@ -41,13 +43,22 @@ export default function Catalog() {
   const navigate = useNavigate();
   const { addToCart } = useCart();
   const { isAuthenticated, user } = useAuth();
+  const toast = useToast();
 
   const [products, setProducts] = useState([]);
   const [categories, setCategories] = useState([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState(searchParams.get('search') || '');
+  const [debouncedSearch, setDebouncedSearch] = useState(search);
   const [selectedCategory, setSelectedCategory] = useState(searchParams.get('category') || '');
   const [sortOption, setSortOption] = useState('name_asc');
+
+  useEffect(() => {
+    const handler = setTimeout(() => {
+      setDebouncedSearch(search);
+    }, 300);
+    return () => clearTimeout(handler);
+  }, [search]);
 
   // Product Detail & Review Modal State
   const [activeModalProduct, setActiveModalProduct] = useState(null);
@@ -66,7 +77,7 @@ export default function Catalog() {
 
       const [prodRes, catRes] = await Promise.all([
         productService.getProducts({
-          search,
+          search: debouncedSearch,
           categoryId: selectedCategory,
           sortBy: sortByField || 'name',
           sortOrder: sortOrderDir || 'asc',
@@ -86,7 +97,7 @@ export default function Catalog() {
 
   useEffect(() => {
     loadCatalog();
-  }, [search, selectedCategory, sortOption]);
+  }, [debouncedSearch, selectedCategory, sortOption]);
 
   const handleOpenProductDetail = async (prod) => {
     setActiveModalProduct(prod);
@@ -140,10 +151,35 @@ export default function Catalog() {
     }
   };
 
-  const handleBuyNow = (prod, qty = 1) => {
-    addToCart(prod._id, qty);
+  const handleDeleteReview = async (reviewId) => {
+    try {
+      await reviewService.deleteReview(reviewId);
+      const updatedRes = await reviewService.getProductReviews(activeModalProduct._id);
+      const updatedData = updatedRes?.reviews ? updatedRes : (updatedRes?.data || { reviews: [], summary: { averageRating: 0, totalReviews: 0 } });
+      setReviewsData(updatedData);
+      setReviewFeedback({ type: 'success', text: 'Review removed successfully.' });
+    } catch (err) {
+      setReviewFeedback({ type: 'error', text: err.message || 'Failed to delete review' });
+    }
+  };
+
+  const handleAddToCart = async (prod, qty = 1) => {
+    const res = await addToCart(prod._id, qty);
+    if (res?.success) {
+      toast.success(`${prod.name} (${qty}x) added to basket`, 'Added to Cart');
+    } else {
+      toast.error(res?.error || 'Could not add item to basket', 'Stock Notice');
+    }
+  };
+
+  const handleBuyNow = async (prod, qty = 1) => {
+    const res = await addToCart(prod._id, qty);
     setActiveModalProduct(null);
-    navigate('/checkout');
+    if (res?.success) {
+      navigate('/checkout');
+    } else {
+      toast.error(res?.error || 'Could not add item to basket', 'Stock Notice');
+    }
   };
 
   return (
@@ -181,7 +217,7 @@ export default function Catalog() {
                   { value: 'name_desc', label: 'Name (Z to A)' },
                   { value: 'sellingPrice_asc', label: 'Price: Low to High' },
                   { value: 'sellingPrice_desc', label: 'Price: High to Low' },
-                  { value: 'totalStock_desc', label: 'Stock Availability' },
+                  { value: 'createdAt_desc', label: 'Newest Arrivals' },
                 ]}
               />
             </div>
@@ -248,7 +284,7 @@ export default function Catalog() {
               <ProductCard
                 key={prod._id}
                 product={prod}
-                onAddToCart={(id, qty) => addToCart(id, qty)}
+                onAddToCart={(id, qty) => handleAddToCart(prod, qty)}
                 onClick={() => handleOpenProductDetail(prod)}
               />
             ))}
@@ -270,7 +306,7 @@ export default function Catalog() {
         >
           <div className="space-y-6">
             {/* Top Showcase: Pricing, Stock, Quantity, Actions */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-5 p-5 rounded-2xl bg-slate-50 dark:bg-slate-850 border border-slate-200/80 dark:border-slate-800">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-5 p-5 rounded-2xl bg-slate-50 dark:bg-slate-800/80 border border-slate-200/80 dark:border-slate-700/80">
               <div className="flex flex-col justify-between">
                 <div>
                   <div className="flex items-center gap-2 mb-2">
@@ -338,7 +374,7 @@ export default function Catalog() {
                     fullWidth
                     icon={ShoppingCart}
                     onClick={() => {
-                      addToCart(activeModalProduct._id, modalQty);
+                      handleAddToCart(activeModalProduct, modalQty);
                       setActiveModalProduct(null);
                     }}
                   >
@@ -360,25 +396,25 @@ export default function Catalog() {
 
             {/* Product Specifications Table */}
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
-              <div className="p-3 rounded-xl bg-white dark:bg-slate-850 border border-slate-200/80 dark:border-slate-800">
+              <div className="p-3 rounded-xl bg-white dark:bg-slate-800/80 border border-slate-200/80 dark:border-slate-700/80">
                 <span className="text-slate-400 block text-[10px] uppercase font-bold">Barcode</span>
                 <span className="font-mono font-bold text-slate-900 dark:text-white truncate block">
                   {activeModalProduct.barcode || '8901030006030'}
                 </span>
               </div>
-              <div className="p-3 rounded-xl bg-white dark:bg-slate-850 border border-slate-200/80 dark:border-slate-800">
+              <div className="p-3 rounded-xl bg-white dark:bg-slate-800/80 border border-slate-200/80 dark:border-slate-700/80">
                 <span className="text-slate-400 block text-[10px] uppercase font-bold">SKU Code</span>
                 <span className="font-mono font-bold text-slate-900 dark:text-white truncate block">
                   {activeModalProduct.sku || 'SKU-GENERAL'}
                 </span>
               </div>
-              <div className="p-3 rounded-xl bg-white dark:bg-slate-850 border border-slate-200/80 dark:border-slate-800">
+              <div className="p-3 rounded-xl bg-white dark:bg-slate-800/80 border border-slate-200/80 dark:border-slate-700/80">
                 <span className="text-slate-400 block text-[10px] uppercase font-bold">GST Tax Rate</span>
                 <span className="font-bold text-slate-900 dark:text-white block">
                   {activeModalProduct.taxRate}% GST
                 </span>
               </div>
-              <div className="p-3 rounded-xl bg-white dark:bg-slate-850 border border-slate-200/80 dark:border-slate-800">
+              <div className="p-3 rounded-xl bg-white dark:bg-slate-800/80 border border-slate-200/80 dark:border-slate-700/80">
                 <span className="text-slate-400 block text-[10px] uppercase font-bold">Batch Order</span>
                 <span className="font-bold text-emerald-600 dark:text-emerald-400 block">
                   FEFO First-Out
@@ -403,7 +439,7 @@ export default function Catalog() {
               </div>
 
               {/* Write Review Form */}
-              <form onSubmit={handleReviewSubmit} className="p-4 rounded-xl bg-slate-50 dark:bg-slate-850 border border-slate-200/80 dark:border-slate-800 space-y-3">
+              <form onSubmit={handleReviewSubmit} className="p-4 rounded-xl bg-slate-50 dark:bg-slate-800/80 border border-slate-200/80 dark:border-slate-700/80 space-y-3">
                 <div className="flex items-center justify-between">
                   <span className="text-xs font-semibold text-slate-700 dark:text-slate-300">Rate this product:</span>
                   <div className="flex items-center gap-1">
@@ -468,7 +504,7 @@ export default function Catalog() {
                       <div className="flex items-center justify-between">
                         <div className="flex items-center gap-2">
                           <span className="font-bold text-slate-900 dark:text-white">
-                            {rev.user?.name || 'Customer'}
+                            {rev.customerId?.name || rev.user?.name || 'Customer'}
                           </span>
                           {rev.isVerifiedPurchase && (
                             <Badge variant="success" size="sm" dot>
@@ -476,10 +512,22 @@ export default function Catalog() {
                             </Badge>
                           )}
                         </div>
-                        <div className="flex items-center text-amber-400">
-                          {Array.from({ length: rev.rating || 5 }).map((_, i) => (
-                            <Star key={i} className="w-3 h-3 fill-current" />
-                          ))}
+                        <div className="flex items-center gap-2">
+                          <div className="flex items-center text-amber-400">
+                            {Array.from({ length: rev.rating || 5 }).map((_, i) => (
+                              <Star key={i} className="w-3 h-3 fill-current" />
+                            ))}
+                          </div>
+                          {(user?._id === (rev.customerId?._id || rev.customerId) || user?.role === 'admin') && (
+                            <button
+                              type="button"
+                              onClick={() => handleDeleteReview(rev._id)}
+                              className="text-slate-400 hover:text-rose-500 p-0.5 rounded transition-colors"
+                              title="Delete Review"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          )}
                         </div>
                       </div>
                       <p className="text-slate-600 dark:text-slate-400 leading-relaxed">

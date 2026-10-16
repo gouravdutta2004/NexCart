@@ -13,4 +13,9 @@ router.put('/items/:productId', validateUpdateCartItem, cartController.updateCar
 router.delete('/items/:productId', cartController.removeFromCart);
 router.delete('/', cartController.clearCart);
 
+// API.md blueprint aliases
+router.post('/add', validateAddToCart, cartController.addToCart);
+router.put('/update', validateUpdateCartItem, cartController.updateCartItem);
+router.delete('/item/:productId', cartController.removeFromCart);
+
 module.exports = router;

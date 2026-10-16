@@ -64,6 +64,9 @@ const createOrder = async (req, res, next) => {
       shippingAddress: req.body.shippingAddress,
       notes: req.body.notes,
       ipAddress: req.ip || req.connection?.remoteAddress,
+      requestingUser: req.user,
+      managerOverride: req.body.managerOverride,
+      orderStatus: req.body.orderStatus,
     });
 
     return ApiResponse.created(res, {
@@ -106,7 +109,7 @@ const getOrderById = async (req, res, next) => {
 
 const getAllOrders = async (req, res, next) => {
   try {
-    const result = await orderService.getAllOrders(req.query);
+    const result = await orderService.getAllOrders(req.query, req.user._id, req.user.role);
     return ApiResponse.success(res, {
       message: 'Supermarket orders list retrieved',
       data: result.orders,
@@ -123,6 +126,7 @@ const updateOrderStatus = async (req, res, next) => {
       req.params.id,
       req.body.status,
       req.user._id,
+      req.user.role,
       req.ip || req.connection?.remoteAddress
     );
     return ApiResponse.success(res, {

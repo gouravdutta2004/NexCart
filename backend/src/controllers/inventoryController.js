@@ -39,7 +39,8 @@ const getLowStockAlerts = async (req, res, next) => {
 
 const getExpiryAlerts = async (req, res, next) => {
   try {
-    const days = req.query.days || 30;
+    const rawDays = parseInt(req.query.days, 10);
+    const days = !isNaN(rawDays) && rawDays > 0 ? Math.min(rawDays, 365) : 30;
     const expiringBatches = await inventoryService.getExpiryAlerts(days);
     return ApiResponse.success(res, {
       message: 'Expiring inventory batches retrieved',

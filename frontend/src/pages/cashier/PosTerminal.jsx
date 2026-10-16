@@ -31,6 +31,7 @@ import { useAuth } from '../../context/AuthContext';
 import { formatCurrency, formatDateTime } from '../../utils/formatters';
 import Button from '../../components/ui/Button';
 import Badge from '../../components/ui/Badge';
+import useSocket from '../../hooks/useSocket';
 
 export default function PosTerminal() {
   const { user } = useAuth();
@@ -55,17 +56,51 @@ export default function PosTerminal() {
   const [processingOrder, setProcessingOrder] = useState(false);
   const [orderError, setOrderError] = useState(null);
 
-  useEffect(() => {
-    barcodeInputRef.current?.focus();
-    loadHeldCarts();
-  }, []);
+  const { on, off } = useSocket();
 
-  const loadHeldCarts = async () => {
+  const loadHeldCarts = useCallback(async () => {
     try {
       const res = await posService.getHeldCarts();
       setHeldCarts(res?.heldCarts || res?.data?.heldCarts || []);
     } catch {
       // Ignored
+    }
+  }, []);
+
+  useEffect(() => {
+    barcodeInputRef.current?.focus();
+    loadHeldCarts();
+
+    const handleHeldChange = () => {
+      loadHeldCarts();
+    };
+
+    on('cart_held', handleHeldChange);
+    on('pos_completed', handleHeldChange);
+
+    return () => {
+      off('cart_held', handleHeldChange);
+      off('pos_completed', handleHeldChange);
+    };
+  }, [loadHeldCarts, on, off]);
+
+  const playScanChime = () => {
+    try {
+      const AudioCtx = window.AudioContext || window.webkitAudioContext;
+      if (!AudioCtx) return;
+      const ctx = new AudioCtx();
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(920, ctx.currentTime);
+      gain.gain.setValueAtTime(0.12, ctx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.1);
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.start();
+      osc.stop(ctx.currentTime + 0.1);
+    } catch {
+      // Audio playback restrictions fallback
     }
   };
 
@@ -80,6 +115,8 @@ export default function PosTerminal() {
       const res = await posService.lookupBarcode(code);
       const product = res?.product || res?.data?.product;
       if (!product) throw new Error('Product not found for scanned barcode');
+
+      playScanChime();
 
       setBillingItems((prev) => {
         const existingIdx = prev.findIndex((i) => i.productId === product._id);
@@ -203,8 +240,9 @@ export default function PosTerminal() {
       const payload = {
         orderType: 'pos_walkin',
         items: billingItems.map((item) => ({
-          productId: item.productId,
+          productId: item.productId || item._id,
           quantity: item.quantity,
+          discount: Number(item.discount) || 0,
         })),
         paymentDetails: {
           method: paymentMethod,
@@ -301,17 +339,17 @@ export default function PosTerminal() {
               <ArrowLeft className="w-4 h-4" />
             </Link>
             <div>
-              <div className="flex items-center gap-2">
-                <span className="text-[11px] font-bold text-emerald-600 dark:text-emerald-400 uppercase tracking-wider">
-                  High-Speed POS Lane 01
+              <div className="flex items-center gap-2 mb-1">
+                <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-slate-900 text-emerald-400 dark:bg-emerald-950/60 dark:text-emerald-300 border border-slate-700 dark:border-emerald-800 shadow-xs">
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
+                  LANE 04 • TERMINAL #NX-POS-8821
                 </span>
-                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-semibold bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800">
-                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
-                  Ready to Bill
+                <span className="text-[11px] font-mono text-slate-500 dark:text-slate-400 hidden sm:inline">
+                  OPERATOR: {user?.name || 'Cashier'}
                 </span>
               </div>
               <h1 className="text-xl sm:text-2xl font-black text-slate-900 dark:text-white tracking-tight">
-                Point of Sale Terminal
+                Enterprise Point of Sale
               </h1>
             </div>
           </div>
@@ -350,8 +388,8 @@ export default function PosTerminal() {
                 }}
                 className="flex items-center gap-3"
               >
-                <div className="relative flex-1">
-                  <Scan className="w-5 h-5 absolute left-3.5 top-3.5 text-emerald-500 dark:text-emerald-400" />
+                <div className="relative flex-1 group">
+                  <Scan className="w-5 h-5 absolute left-3.5 top-3.5 text-emerald-500 dark:text-emerald-400 z-10" />
                   <input
                     ref={barcodeInputRef}
                     data-barcode-input="true"
@@ -359,8 +397,12 @@ export default function PosTerminal() {
                     value={barcodeInput}
                     onChange={(e) => setBarcodeInput(e.target.value)}
                     placeholder="Scan EAN Barcode or type code... (Hot-key: F2)"
-                    className="w-full pl-11 pr-4 py-3 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl text-slate-900 dark:text-white font-mono text-sm placeholder-slate-400 dark:placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-emerald-500 transition-all shadow-inner"
+                    className="w-full pl-11 pr-24 py-3 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl text-slate-900 dark:text-white font-mono text-sm placeholder-slate-400 dark:placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-emerald-500 transition-all shadow-inner"
                   />
+                  <div className="absolute right-3.5 top-3.5 flex items-center gap-1.5 pointer-events-none select-none">
+                    <span className="w-2 h-2 rounded-full bg-red-500 animate-ping" />
+                    <span className="text-[10px] font-mono font-bold text-red-600 dark:text-red-400">LASER ON</span>
+                  </div>
                 </div>
                 <Button
                   type="submit"
@@ -801,7 +843,14 @@ export default function PosTerminal() {
               ) : (
                 /* Thermal Receipt View */
                 <div>
-                  <div className="p-6 bg-white text-slate-900 rounded-2xl shadow-inner font-mono text-xs max-w-sm mx-auto mb-5 border border-slate-200">
+                  {/* Top Serrated Tear */}
+                  <div className="max-w-sm mx-auto overflow-hidden leading-none text-white -mb-1">
+                    <svg className="w-full h-2.5 fill-current" preserveAspectRatio="none" viewBox="0 0 200 8">
+                      <polygon points="0,8 5,0 10,8 15,0 20,8 25,0 30,8 35,0 40,8 45,0 50,8 55,0 60,8 65,0 70,8 75,0 80,8 85,0 90,8 95,0 100,8 105,0 110,8 115,0 120,8 125,0 130,8 135,0 140,8 145,0 150,8 155,0 160,8 165,0 170,8 175,0 180,8 185,0 190,8 195,0 200,8" />
+                    </svg>
+                  </div>
+
+                  <div className="printable-receipt p-6 bg-white text-slate-900 shadow-xl font-mono text-xs max-w-sm mx-auto border-x border-slate-200">
                     <div className="text-center pb-3 border-b border-dashed border-slate-400 mb-3">
                       <div className="text-base font-black tracking-tight text-slate-900">NexCart Supermarket</div>
                       <div className="text-[10px] text-slate-600">Automated Retail System • GST Regd</div>
@@ -865,6 +914,13 @@ export default function PosTerminal() {
                       Thank you for shopping at NexCart!<br />
                       Visit again soon.
                     </div>
+                  </div>
+
+                  {/* Bottom Serrated Tear */}
+                  <div className="max-w-sm mx-auto overflow-hidden leading-none text-white -mt-1 mb-5">
+                    <svg className="w-full h-2.5 fill-current" preserveAspectRatio="none" viewBox="0 0 200 8">
+                      <polygon points="0,0 5,8 10,0 15,8 20,0 25,8 30,0 35,8 40,0 45,8 50,0 55,8 60,0 65,8 70,0 75,8 80,0 85,8 90,0 95,8 100,0 105,8 110,0 115,8 120,0 125,8 130,0 135,8 140,0 145,8 150,0 155,8 160,0 165,8 170,0 175,8 180,0 185,8 190,0 195,8 200,0" />
+                    </svg>
                   </div>
 
                   <div className="flex flex-col sm:flex-row gap-3">

@@ -73,8 +73,15 @@ export default function DiscountManagement() {
 
   const handleCreateSubmit = async (e) => {
     e.preventDefault();
-    setSubmitting(true);
     setError(null);
+
+    const val = Number(formData.discountValue);
+    if (isNaN(val) || val <= 0 || (formData.discountType === 'percentage' && val > 100)) {
+      setError('Discount value must be greater than 0, and percentage cannot exceed 100%');
+      return;
+    }
+
+    setSubmitting(true);
     try {
       await discountService.createDiscount(formData);
       setSuccessMsg(`Discount code '${formData.code.toUpperCase()}' created successfully`);

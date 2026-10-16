@@ -22,42 +22,38 @@ const httpServer = http.createServer(app);
 // Initialize WebSockets
 const io = initSocket(httpServer);
 
+const { getAllowedOrigins, isOriginAllowed } = require('./config/corsHelper');
+
 // Security & Parsing Middlewares
 app.use(
   helmet({
-    contentSecurityPolicy: false,
+    contentSecurityPolicy: {
+      directives: {
+        defaultSrc: ["'self'"],
+        scriptSrc: ["'self'", "'unsafe-inline'"],
+        styleSrc: ["'self'", "'unsafe-inline'", 'https://fonts.googleapis.com'],
+        fontSrc: ["'self'", 'https://fonts.gstatic.com', 'data:'],
+        imgSrc: ["'self'", 'data:', 'blob:', 'https:'],
+        connectSrc: [
+          "'self'",
+          'ws:',
+          'wss:',
+          'http://localhost:*',
+          'http://127.0.0.1:*',
+          ...(config.CLIENT_URL ? [config.CLIENT_URL] : []),
+        ],
+        objectSrc: ["'none'"],
+        upgradeInsecureRequests: config.NODE_ENV === 'production' ? [] : null,
+      },
+    },
     crossOriginEmbedderPolicy: false,
   })
 );
 
-const getAllowedOrigins = () => {
-  const origins = [
-    config.CLIENT_URL,
-    'http://localhost:5173',
-    'http://127.0.0.1:5173',
-    'http://localhost:5001',
-  ].filter(Boolean);
-
-  if (config.ADDITIONAL_ORIGINS) {
-    config.ADDITIONAL_ORIGINS.split(',').forEach((o) => {
-      const trimmed = o.trim();
-      if (trimmed && !origins.includes(trimmed)) origins.push(trimmed);
-    });
-  }
-  return origins;
-};
-
 app.use(
   cors({
     origin: (origin, callback) => {
-      if (!origin) return callback(null, true);
-      const allowed = getAllowedOrigins();
-      if (
-        allowed.includes(origin) ||
-        origin.endsWith('.vercel.app') ||
-        origin.endsWith('.onrender.com') ||
-        origin.endsWith('.netlify.app')
-      ) {
+      if (isOriginAllowed(origin)) {
         return callback(null, true);
       }
       return callback(null, false);
@@ -68,8 +64,8 @@ app.use(
   })
 );
 
-app.use(express.json({ limit: '10mb' }));
-app.use(express.urlencoded({ extended: true, limit: '10mb' }));
+app.use(express.json({ limit: '500kb' }));
+app.use(express.urlencoded({ extended: true, limit: '500kb' }));
 
 if (config.NODE_ENV !== 'test') {
   app.use(morgan('dev'));
@@ -112,10 +108,14 @@ app.use((req, res, next) => {
 // System Health Check Endpoint
 app.get('/api/health', (req, res) => {
   const dbStatus = getDBStatus();
-  return ApiResponse.success(res, {
-    message: 'NexCart System is Operational',
+  const isHealthy = dbStatus.isConnected;
+  const statusCode = isHealthy ? 200 : 503;
+  return res.status(statusCode).json({
+    success: isHealthy,
+    statusCode,
+    message: isHealthy ? 'NexCart System is Operational' : 'Database Connection Degraded',
     data: {
-      status: 'UP',
+      status: isHealthy ? 'UP' : 'DEGRADED',
       timestamp: new Date().toISOString(),
       uptimeSeconds: Math.floor(process.uptime()),
       environment: config.NODE_ENV,
@@ -135,7 +135,7 @@ if (hasStaticBuild) {
 
   // SPA fallback for all non-API GET routes
   app.get('*', (req, res, next) => {
-    if (req.originalUrl.startsWith('/api')) {
+    if (req.originalUrl.startsWith('/api') || directApiPrefixes.some((p) => req.originalUrl.startsWith(p))) {
       return next();
     }
     res.sendFile(path.join(frontendDistPath, 'index.html'));
@@ -196,4 +196,4 @@ if (require.main === module) {
   startServer();
 }
 
-module.exports = { app, httpServer, io };
+module.exports = { app, httpServer, io, getAllowedOrigins, isOriginAllowed };

@@ -36,6 +36,26 @@ export default function PurchaseOrderManagement() {
   const [poItems, setPoItems] = useState([{ productId: '', orderedQty: 20, unitCost: 20.0 }]);
   const [submitting, setSubmitting] = useState(false);
   const [receivingId, setReceivingId] = useState(null);
+  const [cancellingId, setCancellingId] = useState(null);
+
+  const handleCancelPO = async (poId, poNumber) => {
+    const reason = window.prompt(`Please enter cancellation reason for ${poNumber} (optional):`, 'Order placed in error / supplier unavailable');
+    if (reason === null) return;
+    setCancellingId(poId);
+    setMessage(null);
+    try {
+      await purchaseOrderService.cancelPurchaseOrder(poId, reason);
+      setMessage({
+        type: 'success',
+        text: `Successfully cancelled Purchase Order ${poNumber}.`,
+      });
+      loadData();
+    } catch (err) {
+      setMessage({ type: 'error', text: err.message || 'PO cancellation failed' });
+    } finally {
+      setCancellingId(null);
+    }
+  };
 
   const loadData = async () => {
     try {
@@ -98,8 +118,19 @@ export default function PurchaseOrderManagement() {
 
   const handleCreatePO = async (e) => {
     e.preventDefault();
-    setSubmitting(true);
     setMessage(null);
+
+    if (!selectedSupplier) {
+      setMessage({ type: 'error', text: 'Please select a registered supplier before generating a purchase order.' });
+      return;
+    }
+
+    if (!poItems || poItems.length === 0 || poItems.some((i) => !i.productId || Number(i.orderedQty) <= 0 || Number(i.unitCost) < 0)) {
+      setMessage({ type: 'error', text: 'All PO items must have a valid product selected with quantity > 0 and valid unit cost.' });
+      return;
+    }
+
+    setSubmitting(true);
 
     try {
       await purchaseOrderService.createPurchaseOrder({
@@ -258,17 +289,30 @@ export default function PurchaseOrderManagement() {
                             <span className="text-xs text-slate-400 font-mono">
                               Deposited into FEFO
                             </span>
+                          ) : po.status === 'cancelled' ? (
+                            <span className="text-xs text-rose-500 font-mono">
+                              Cancelled
+                            </span>
                           ) : (
-                            <Button
-                              onClick={() => handleReceiveStock(po._id, po.poNumber)}
-                              disabled={receivingId === po._id}
-                              size="sm"
-                              variant="success"
-                              className="ml-auto"
-                            >
-                              <PackageCheck className="w-3.5 h-3.5 mr-1" />
-                              {receivingId === po._id ? 'Receiving...' : 'Receive Stock'}
-                            </Button>
+                            <div className="flex items-center justify-end gap-2">
+                              <Button
+                                onClick={() => handleReceiveStock(po._id, po.poNumber)}
+                                disabled={receivingId === po._id || cancellingId === po._id}
+                                size="sm"
+                                variant="success"
+                              >
+                                <PackageCheck className="w-3.5 h-3.5 mr-1" />
+                                {receivingId === po._id ? 'Receiving...' : 'Receive'}
+                              </Button>
+                              <Button
+                                onClick={() => handleCancelPO(po._id, po.poNumber)}
+                                disabled={receivingId === po._id || cancellingId === po._id}
+                                size="sm"
+                                variant="danger"
+                              >
+                                {cancellingId === po._id ? 'Cancelling...' : 'Cancel'}
+                              </Button>
+                            </div>
                           )}
                         </td>
                       </tr>

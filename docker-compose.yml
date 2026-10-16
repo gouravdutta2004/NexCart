@@ -47,8 +47,8 @@ services:
       - NODE_ENV=production
       - PORT=5001
       - MONGODB_URI=mongodb://mongodb:27017/nexcart_db?replicaSet=rs0
-      - JWT_SECRET=nexcart_super_secure_production_jwt_key_2026
-      - JWT_EXPIRES_IN=7d
+      - JWT_SECRET=${JWT_SECRET:?JWT_SECRET environment variable is required}
+      - JWT_EXPIRES_IN=${JWT_EXPIRES_IN:-1d}
       - CLIENT_URL=http://localhost:3000
     depends_on:
       mongodb:

@@ -1,13 +1,13 @@
 const express = require('express');
 const router = express.Router();
 const categoryController = require('../controllers/categoryController');
-const { protect } = require('../middleware/authMiddleware');
+const { protect, optionalProtect } = require('../middleware/authMiddleware');
 const { authorize } = require('../middleware/roleMiddleware');
 const { validateCategory } = require('../validators/categoryValidator');
 const { ROLES } = require('../utils/constants');
 
-// Public route: Browse categories
-router.get('/', categoryController.getCategories);
+// Public route: Browse categories (optionalProtect identifies Admins for includeInactive)
+router.get('/', optionalProtect, categoryController.getCategories);
 router.get('/:id', categoryController.getCategory);
 
 // Admin-only management
