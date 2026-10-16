@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import Navbar from '../../components/common/Navbar';
 import { useAuth } from '../../context/AuthContext';
 import orderService from '../../services/orderService';
+import loyaltyService from '../../services/loyaltyService';
 import { formatCurrency, formatDateTime } from '../../utils/formatters';
 import { 
   Store, 
@@ -16,7 +17,12 @@ import {
   Download,
   Package,
   CheckCircle2,
-  Clock
+  Clock,
+  Coins,
+  Award,
+  Crown,
+  TrendingUp,
+  Gift
 } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import Button from '../../components/ui/Button';
@@ -27,6 +33,8 @@ export default function CustomerDashboard() {
   const { user } = useAuth();
   const [recentOrders, setRecentOrders] = useState([]);
   const [loadingOrders, setLoadingOrders] = useState(true);
+  const [loyaltyData, setLoyaltyData] = useState(null);
+  const [loadingLoyalty, setLoadingLoyalty] = useState(true);
 
   useEffect(() => {
     const fetchRecentOrders = async () => {
@@ -41,7 +49,20 @@ export default function CustomerDashboard() {
       }
     };
 
+    const fetchLoyalty = async () => {
+      try {
+        setLoadingLoyalty(true);
+        const res = await loyaltyService.getMyProfile();
+        setLoyaltyData(res?.data?.data || res?.data || res);
+      } catch (err) {
+        console.error('Failed to load loyalty profile:', err);
+      } finally {
+        setLoadingLoyalty(false);
+      }
+    };
+
     fetchRecentOrders();
+    fetchLoyalty();
   }, []);
 
   const totalSpent = recentOrders.reduce((sum, ord) => sum + (ord.totalAmount || 0), 0);
@@ -78,6 +99,143 @@ export default function CustomerDashboard() {
             </div>
           </div>
         </div>
+
+        {/* NexCart Premier Rewards Club Showcase */}
+        {loyaltyData && (
+          <div className="rounded-3xl p-6 sm:p-7 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm space-y-6">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-4 border-b border-slate-100 dark:border-slate-800 gap-3">
+              <div className="flex items-center gap-2.5">
+                <div className="w-9 h-9 rounded-xl bg-amber-50 dark:bg-amber-950/60 text-amber-500 flex items-center justify-center shadow-xs">
+                  <Coins className="w-5 h-5" />
+                </div>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <h3 className="text-base sm:text-lg font-black text-slate-900 dark:text-white">
+                      NexCart Rewards Club
+                    </h3>
+                    <span className="text-[10px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full bg-amber-100 dark:bg-amber-900/60 text-amber-800 dark:text-amber-300">
+                      {loyaltyData.tier} Tier
+                    </span>
+                  </div>
+                  <p className="text-xs text-slate-500 dark:text-slate-400">
+                    Earn 10 NexPoints per ₹100 spent • Redeem instantly at checkout or POS counter
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <span className="text-xs font-semibold text-slate-500 dark:text-slate-400">Earning Rate:</span>
+                <span className="text-xs font-bold font-mono px-2.5 py-1 rounded-lg bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800">
+                  {loyaltyData.multiplier}x Points Accrual
+                </span>
+              </div>
+            </div>
+
+            {/* Loyalty Stats Grid */}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              {/* Balance Card */}
+              <div className="p-5 rounded-2xl bg-gradient-to-br from-amber-500/10 via-amber-500/5 to-transparent border border-amber-200 dark:border-amber-800/60 flex flex-col justify-between">
+                <div>
+                  <span className="text-xs font-bold uppercase tracking-wider text-amber-700 dark:text-amber-300 flex items-center gap-1.5 mb-1">
+                    <Crown className="w-3.5 h-3.5" /> Available NexPoints
+                  </span>
+                  <div className="text-3xl sm:text-4xl font-black font-mono text-slate-900 dark:text-white mt-1">
+                    {loyaltyData.loyaltyPoints} <span className="text-sm font-semibold text-slate-500">pts</span>
+                  </div>
+                </div>
+                <div className="pt-3 border-t border-amber-200/60 dark:border-amber-800/40 mt-3 flex justify-between items-center text-xs">
+                  <span className="text-slate-600 dark:text-slate-400">Redemption Value:</span>
+                  <span className="font-bold font-mono text-emerald-600 dark:text-emerald-400 text-sm">
+                    {formatCurrency(loyaltyData.currencyValue)}
+                  </span>
+                </div>
+              </div>
+
+              {/* Tier Progress Card */}
+              <div className="p-5 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700/80 flex flex-col justify-between">
+                <div>
+                  <div className="flex justify-between items-center mb-1">
+                    <span className="text-xs font-bold uppercase tracking-wider text-slate-600 dark:text-slate-400">
+                      Tier Progression
+                    </span>
+                    <span className="text-xs font-black text-amber-600 dark:text-amber-400">
+                      {loyaltyData.tier}
+                    </span>
+                  </div>
+                  <div className="text-xs text-slate-500 dark:text-slate-400 mb-3">
+                    {loyaltyData.nextTier ? (
+                      <>Spend {formatCurrency(loyaltyData.remainingSpend)} more to reach <strong className="text-slate-900 dark:text-white">{loyaltyData.nextTier}</strong></>
+                    ) : (
+                      <>Maximum VIP Platinum status unlocked!</>
+                    )}
+                  </div>
+                  {/* Progress Bar */}
+                  <div className="w-full bg-slate-200 dark:bg-slate-700 rounded-full h-2.5 overflow-hidden">
+                    <div
+                      className="bg-gradient-to-r from-amber-500 to-emerald-500 h-2.5 rounded-full transition-all duration-500"
+                      style={{ width: `${loyaltyData.progressPercentage || 100}%` }}
+                    />
+                  </div>
+                </div>
+                <div className="pt-3 border-t border-slate-200 dark:border-slate-700 mt-3 flex justify-between text-xs text-slate-500">
+                  <span>Lifetime Spend:</span>
+                  <span className="font-bold font-mono text-slate-900 dark:text-white">
+                    {formatCurrency(loyaltyData.lifetimeSpend)}
+                  </span>
+                </div>
+              </div>
+
+              {/* Tier Perks Card */}
+              <div className="p-5 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700/80 flex flex-col justify-between">
+                <div>
+                  <span className="text-xs font-bold uppercase tracking-wider text-slate-600 dark:text-slate-400 flex items-center gap-1.5 mb-2">
+                    <Award className="w-3.5 h-3.5 text-emerald-500" /> Active Membership Perks
+                  </span>
+                  <p className="text-xs text-slate-700 dark:text-slate-300 font-medium leading-relaxed">
+                    {loyaltyData.perks}
+                  </p>
+                </div>
+                <div className="pt-3 border-t border-slate-200 dark:border-slate-700 mt-3 flex justify-between items-center text-xs">
+                  <span className="text-slate-500">Redeem Rules:</span>
+                  <span className="text-slate-700 dark:text-slate-300 font-semibold">Min 50 pts (₹5)</span>
+                </div>
+              </div>
+            </div>
+
+            {/* Recent Loyalty Transactions Ledger */}
+            {loyaltyData.history && loyaltyData.history.length > 0 && (
+              <div className="space-y-2 pt-2">
+                <span className="text-xs font-bold uppercase tracking-wider text-slate-400 block">
+                  Recent Rewards Activity
+                </span>
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5">
+                  {loyaltyData.history.slice(0, 3).map((item, idx) => (
+                    <div
+                      key={idx}
+                      className="p-3 rounded-xl bg-slate-50 dark:bg-slate-800/40 border border-slate-200/80 dark:border-slate-700/60 flex items-center justify-between text-xs"
+                    >
+                      <div className="min-w-0 pr-2">
+                        <span className="font-semibold text-slate-900 dark:text-white truncate block">
+                          {item.reason || item.type}
+                        </span>
+                        <span className="text-[10px] text-slate-400 block">
+                          {formatDateTime(item.createdAt)}
+                        </span>
+                      </div>
+                      <span
+                        className={`font-mono font-bold shrink-0 ${
+                          item.points > 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-amber-600 dark:text-amber-400'
+                        }`}
+                      >
+                        {item.points > 0 ? `+${item.points}` : item.points} pts
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
 
         {/* Feature Cards Grid */}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">

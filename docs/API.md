@@ -101,3 +101,9 @@
 
 #### Compliance & Audit Logging (`/api/v1/audit-logs`)
 - **`GET /`**: Application-level append-only system audit trail capturing user, action, module, previousState, and newState JSON diffs (Admin).
+
+#### Loyalty & Rewards Points Engine (`/api/v1/loyalty`)
+- **`GET /me`**: Retrieve authenticated customer's loyalty profile, point balance (10 pts = ₹1.00), current tier (Bronze, Silver, Gold, Platinum), tier progression percentage, perks breakdown, and point transaction history.
+- **`GET /lookup?query=phone|email|name`**: Fast customer member lookup with flexible phone digit matching for cashier POS counter checkout (Cashier, Admin).
+- **`POST /calculate-redemption`**: Pre-flight validation of point redemption discount against order subtotal (enforces min 50 pts, max 50% subtotal ceiling).
+

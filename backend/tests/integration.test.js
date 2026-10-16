@@ -1918,6 +1918,110 @@ async function runTestSuite() {
     const adminFound = adminProdListRes.data.data.products.some((p) => p._id.toString() === createdProdId.toString());
     assert(adminFound, 'Admin catalog with includeInactive=true includes soft-deleted product');
 
+    // ---------------------------------------------------------
+    // TEST SUITE 16: Customer Loyalty & Rewards Points Engine
+    // ---------------------------------------------------------
+    console.log('\n--- SUITE 16: Customer Loyalty & Rewards Points Engine ---');
+
+    // 16.1 Authenticated customer retrieves their loyalty profile
+    const loyaltyProfileRes = await request('GET', '/api/v1/loyalty/me', {
+      Authorization: `Bearer ${customerToken}`,
+    });
+    assert(loyaltyProfileRes.statusCode === 200, 'Customer retrieves loyalty profile with HTTP 200');
+    assert(loyaltyProfileRes.data.data.tier === 'Gold', 'Seeded customer Emily has Gold tier membership');
+    const initialCustomerPoints = loyaltyProfileRes.data.data.loyaltyPoints;
+    assert(initialCustomerPoints >= 350, `Customer has valid points balance (${initialCustomerPoints} pts)`);
+    assert(loyaltyProfileRes.data.data.currencyValue === Math.round(initialCustomerPoints * 0.10 * 100) / 100, 'Loyalty points value in INR is accurate (10 pts = ₹1.00)');
+    assert(loyaltyProfileRes.data.data.multiplier === 1.5, 'Gold tier grants 1.5x points multiplier');
+    assert(Array.isArray(loyaltyProfileRes.data.data.history) && loyaltyProfileRes.data.data.history.length >= 2, 'Loyalty history records seeded');
+
+    // 16.2 Unauthenticated request to /loyalty/me rejected
+    const unauthLoyaltyRes = await request('GET', '/api/v1/loyalty/me');
+    assert(unauthLoyaltyRes.statusCode === 401, 'Unauthenticated request to /loyalty/me rejected with HTTP 401');
+
+    // 16.3 Cashier customer lookup by phone number
+    const cashierLookupRes = await request('GET', '/api/v1/loyalty/lookup?query=9820104004', {
+      Authorization: `Bearer ${cashierToken}`,
+    });
+    assert(cashierLookupRes.statusCode === 200, 'Cashier can lookup customer by phone with HTTP 200');
+    assert(cashierLookupRes.data.data.customers.length >= 1, 'Lookup returns matching customer');
+    assert(cashierLookupRes.data.data.customers[0].email === 'customer@nexcart.com', 'Lookup customer matches Emily Watson');
+    assert(cashierLookupRes.data.data.customers[0].loyaltyTier === 'Gold', 'Lookup reveals customer Gold tier');
+
+    // 16.4 Regular customer forbidden from calling lookup endpoint
+    const forbiddenLookupRes = await request('GET', '/api/v1/loyalty/lookup?query=98201', {
+      Authorization: `Bearer ${customerToken}`,
+    });
+    assert(forbiddenLookupRes.statusCode === 403, 'Customer forbidden from calling /loyalty/lookup with HTTP 403');
+
+    // 16.5 Loyalty redemption calculation endpoint validations
+    const validRedemptionCalc = await request('POST', '/api/v1/loyalty/calculate-redemption', {
+      Authorization: `Bearer ${customerToken}`,
+    }, {
+      pointsToRedeem: 100,
+      subtotal: 500,
+    });
+    assert(validRedemptionCalc.statusCode === 200, 'Redemption calculation succeeds with HTTP 200');
+    assert(validRedemptionCalc.data.data.discountAmount === 10, '100 points yields ₹10.00 discount');
+    assert(validRedemptionCalc.data.data.netSubtotal === 490, 'Net subtotal after loyalty discount is ₹490');
+
+    // Minimum 50 points enforcement
+    const underMinCalc = await request('POST', '/api/v1/loyalty/calculate-redemption', {
+      Authorization: `Bearer ${customerToken}`,
+    }, {
+      pointsToRedeem: 30,
+      subtotal: 500,
+    });
+    assert(underMinCalc.statusCode === 400, 'Redemption under 50 points rejected with HTTP 400');
+
+    // Max 50% subtotal ceiling enforcement
+    const overCeilingCalc = await request('POST', '/api/v1/loyalty/calculate-redemption', {
+      Authorization: `Bearer ${customerToken}`,
+    }, {
+      pointsToRedeem: 350,
+      subtotal: 40, // 50% is ₹20 (200 pts), 350 pts would be ₹35 (>50%)
+    });
+    assert(overCeilingCalc.statusCode === 400, 'Redemption exceeding 50% subtotal rejected with HTTP 400');
+
+    // 16.6 Place order with Loyalty Points redemption & accrual
+    const availableProd = await Product.findOne({ isActive: true, sellingPrice: { $gt: 100 } });
+    const orderWithLoyaltyRes = await request('POST', '/api/v1/orders', {
+      Authorization: `Bearer ${customerToken}`,
+    }, {
+      orderType: 'online',
+      items: [{ productId: availableProd._id, quantity: 2 }],
+      loyaltyPointsToRedeem: 100,
+      paymentDetails: { method: 'card' },
+      shippingAddress: { fullName: 'Emily Watson', addressLine1: '123 Park Ave', city: 'Pune', postalCode: '411001' },
+    });
+    assert(orderWithLoyaltyRes.statusCode === 201, 'Order with loyalty points redemption created with HTTP 201');
+    const createdOrderLoyalty = orderWithLoyaltyRes.data.data.order;
+    assert(createdOrderLoyalty.loyaltyPointsRedeemed === 100, 'Order records 100 loyalty points redeemed');
+    assert(createdOrderLoyalty.loyaltyDiscount === 10, 'Order records ₹10.00 loyalty discount');
+    assert(createdOrderLoyalty.loyaltyPointsEarned > 0, 'Order awards points to Gold customer (1.5x multiplier)');
+
+    // Verify customer points balance was updated (initial - 100 redeemed + points earned)
+    const updatedLoyaltyMe = await request('GET', '/api/v1/loyalty/me', {
+      Authorization: `Bearer ${customerToken}`,
+    });
+    assert(updatedLoyaltyMe.statusCode === 200, 'Updated profile retrieved');
+    const expectedPoints = initialCustomerPoints - 100 + createdOrderLoyalty.loyaltyPointsEarned;
+    assert(updatedLoyaltyMe.data.data.loyaltyPoints === expectedPoints, `Customer balance accurately updated to ${expectedPoints} pts`);
+
+    // 16.7 Order cancellation refunds redeemed points and claws back earned points
+    const cancelLoyaltyOrderRes = await request('PATCH', `/api/v1/orders/${createdOrderLoyalty._id}/status`, {
+      Authorization: `Bearer ${adminToken}`,
+    }, {
+      status: 'cancelled',
+    });
+    assert(cancelLoyaltyOrderRes.statusCode === 200, 'Admin cancels order with HTTP 200');
+
+    // Customer balance should be restored to initialCustomerPoints
+    const postCancelLoyalty = await request('GET', '/api/v1/loyalty/me', {
+      Authorization: `Bearer ${customerToken}`,
+    });
+    assert(postCancelLoyalty.data.data.loyaltyPoints === initialCustomerPoints, `Customer points balance fully restored to ${initialCustomerPoints} after order cancellation`);
+
   } catch (err) {
     console.error('Test Suite Aborted Due to Error:', err);
     failedTests++;

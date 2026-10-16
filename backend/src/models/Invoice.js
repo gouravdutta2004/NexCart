@@ -67,6 +67,18 @@ const invoiceSchema = new mongoose.Schema(
       default: 0,
       min: 0,
     },
+    loyaltyPointsEarned: {
+      type: Number,
+      default: 0,
+    },
+    loyaltyPointsRedeemed: {
+      type: Number,
+      default: 0,
+    },
+    loyaltyDiscount: {
+      type: Number,
+      default: 0,
+    },
     taxBreakdown: {
       cgst: { type: Number, default: 0 },
       sgst: { type: Number, default: 0 },

@@ -60,6 +60,7 @@ const createOrder = async (req, res, next) => {
       orderType,
       items: req.body.items,
       couponCode: req.body.couponCode,
+      loyaltyPointsToRedeem: req.body.loyaltyPointsToRedeem,
       paymentDetails: req.body.paymentDetails,
       shippingAddress: req.body.shippingAddress,
       notes: req.body.notes,

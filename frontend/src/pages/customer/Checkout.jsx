@@ -1,9 +1,10 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import Navbar from '../../components/common/Navbar';
 import { useAuth } from '../../context/AuthContext';
 import { useCart } from '../../context/CartContext';
 import api from '../../services/api';
 import orderService from '../../services/orderService';
+import loyaltyService from '../../services/loyaltyService';
 import { formatCurrency } from '../../utils/formatters';
 import Button from '../../components/ui/Button';
 import Input from '../../components/ui/Input';
@@ -26,7 +27,9 @@ import {
   Clock,
   Sparkles,
   Layers,
-  Banknote
+  Banknote,
+  Coins,
+  Award
 } from 'lucide-react';
 import { Link, useNavigate } from 'react-router-dom';
 
@@ -65,6 +68,22 @@ export default function Checkout() {
   const [couponLoading, setCouponLoading] = useState(false);
   const [couponError, setCouponError] = useState(null);
 
+  // Loyalty Points State
+  const [loyaltyProfile, setLoyaltyProfile] = useState(null);
+  const [pointsToRedeem, setPointsToRedeem] = useState(0);
+  const [loyaltyError, setLoyaltyError] = useState(null);
+
+  useEffect(() => {
+    if (user) {
+      loyaltyService.getMyProfile()
+        .then((res) => {
+          const prof = res?.data?.data || res?.data || res;
+          setLoyaltyProfile(prof);
+        })
+        .catch(() => {});
+    }
+  }, [user]);
+
   const handleApplyCoupon = async (e) => {
     e.preventDefault();
     if (!couponInput.trim()) return;
@@ -92,7 +111,13 @@ export default function Checkout() {
   const couponDiscountAmount = appliedCoupon
     ? Number(appliedCoupon.calculatedDiscount || appliedCoupon.discountAmount || 0)
     : 0;
-  const finalPayableTotal = Math.max(0, Math.round((subtotal - couponDiscountAmount + estimatedTax) * 100) / 100);
+
+  const loyaltyDiscountAmount = Math.round(pointsToRedeem * 0.10 * 100) / 100;
+
+  const finalPayableTotal = Math.max(
+    0,
+    Math.round((subtotal - couponDiscountAmount - loyaltyDiscountAmount + estimatedTax) * 100) / 100
+  );
 
   const handleInputChange = (e) => {
     const { name, value } = e.target;
@@ -117,6 +142,7 @@ export default function Checkout() {
           quantity: it.quantity,
         })),
         couponCode: appliedCoupon ? appliedCoupon.code : undefined,
+        loyaltyPointsToRedeem: pointsToRedeem > 0 ? pointsToRedeem : undefined,
         shippingAddress,
         paymentDetails: {
           method: paymentMethod,
@@ -496,6 +522,92 @@ export default function Checkout() {
                     )}
                   </Card>
 
+                  {/* Loyalty Points Redemption Card */}
+                  {loyaltyProfile && loyaltyProfile.loyaltyPoints >= 50 && (
+                    <Card className="p-5 border-amber-200/60 dark:border-amber-900/40 bg-gradient-to-br from-amber-50/40 to-orange-50/20 dark:from-amber-950/20 dark:to-orange-950/10">
+                      <div className="flex items-center justify-between mb-3">
+                        <h3 className="text-xs font-bold uppercase tracking-wider text-amber-900 dark:text-amber-200 flex items-center gap-1.5">
+                          <Coins className="w-4 h-4 text-amber-500" />
+                          NexPoints Rewards
+                        </h3>
+                        <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-100 dark:bg-amber-900/60 text-amber-800 dark:text-amber-300">
+                          {loyaltyProfile.tier} Member ({loyaltyProfile.multiplier}x)
+                        </span>
+                      </div>
+
+                      {pointsToRedeem === 0 ? (
+                        <div className="space-y-3">
+                          <div className="flex items-center justify-between text-xs">
+                            <span className="text-slate-600 dark:text-slate-400">Available Balance:</span>
+                            <span className="font-mono font-bold text-slate-900 dark:text-white">
+                              {loyaltyProfile.loyaltyPoints} pts ({formatCurrency(loyaltyProfile.currencyValue)})
+                            </span>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="sm"
+                              className="text-xs flex-1 border-amber-300 dark:border-amber-700 hover:bg-amber-100 dark:hover:bg-amber-900/40 text-amber-900 dark:text-amber-200"
+                              onClick={() => {
+                                const maxAllowablePts = Math.min(
+                                  loyaltyProfile.loyaltyPoints,
+                                  Math.floor((subtotal * 0.5) / 0.10)
+                                );
+                                setPointsToRedeem(maxAllowablePts);
+                                setLoyaltyError(null);
+                              }}
+                            >
+                              Redeem Max ({Math.min(loyaltyProfile.loyaltyPoints, Math.floor((subtotal * 0.5) / 0.10))} pts)
+                            </Button>
+                            {loyaltyProfile.loyaltyPoints >= 100 && (
+                              <Button
+                                type="button"
+                                variant="outline"
+                                size="sm"
+                                className="text-xs border-amber-300 dark:border-amber-700 hover:bg-amber-100 dark:hover:bg-amber-900/40 text-amber-900 dark:text-amber-200"
+                                onClick={() => {
+                                  setPointsToRedeem(100);
+                                  setLoyaltyError(null);
+                                }}
+                              >
+                                100 pts (-₹10)
+                              </Button>
+                            )}
+                          </div>
+                          <p className="text-[10px] text-slate-500 dark:text-slate-400">
+                            10 NexPoints = ₹1.00. Redeem up to 50% of basket subtotal.
+                          </p>
+                        </div>
+                      ) : (
+                        <div className="p-3 rounded-xl bg-amber-100/70 dark:bg-amber-900/40 border border-amber-300 dark:border-amber-700 flex items-center justify-between">
+                          <div>
+                            <span className="font-mono text-xs font-bold text-amber-950 dark:text-amber-100">
+                              {pointsToRedeem} NexPoints Applied
+                            </span>
+                            <p className="text-[10px] text-amber-800 dark:text-amber-300">
+                              Instant Discount: -{formatCurrency(loyaltyDiscountAmount)}
+                            </p>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setPointsToRedeem(0);
+                              setLoyaltyError(null);
+                            }}
+                            className="text-xs font-bold text-slate-400 hover:text-rose-500"
+                          >
+                            Remove
+                          </button>
+                        </div>
+                      )}
+
+                      {loyaltyError && (
+                        <p className="text-[11px] text-rose-500 mt-2 font-medium">{loyaltyError}</p>
+                      )}
+                    </Card>
+                  )}
+
                   {/* Order Financial Summary */}
                   <Card className="p-6">
                     <h3 className="text-base font-bold text-slate-900 dark:text-white mb-4">
@@ -532,6 +644,13 @@ export default function Checkout() {
                         <div className="flex justify-between text-emerald-600 dark:text-emerald-400 font-semibold">
                           <span>Coupon Discount ({appliedCoupon.code}):</span>
                           <span className="font-mono">-{formatCurrency(couponDiscountAmount)}</span>
+                        </div>
+                      )}
+
+                      {pointsToRedeem > 0 && (
+                        <div className="flex justify-between text-amber-600 dark:text-amber-400 font-semibold">
+                          <span>NexPoints Discount ({pointsToRedeem} pts):</span>
+                          <span className="font-mono">-{formatCurrency(loyaltyDiscountAmount)}</span>
                         </div>
                       )}
 
@@ -646,6 +765,18 @@ export default function Checkout() {
                   {completedOrder.payment.paymentMethod} (Simulated)
                 </span>
               </div>
+
+              {completedOrder.order.loyaltyPointsEarned > 0 && (
+                <div className="flex justify-between items-center bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800 rounded-xl px-3 py-2 text-xs">
+                  <span className="flex items-center gap-1.5 text-amber-900 dark:text-amber-200 font-semibold">
+                    <Coins className="w-4 h-4 text-amber-500" />
+                    NexPoints Earned:
+                  </span>
+                  <span className="font-bold text-amber-700 dark:text-amber-300 font-mono">
+                    +{completedOrder.order.loyaltyPointsEarned} pts
+                  </span>
+                </div>
+              )}
 
               <div className="flex justify-between items-baseline pt-1">
                 <span className="text-xs font-bold text-slate-700 dark:text-slate-300">Amount Paid:</span>

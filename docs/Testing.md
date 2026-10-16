@@ -30,9 +30,9 @@ All automated integration tests are executed against an isolated MongoDB test da
 | **Database Server** | MongoDB v7.0.30 Community Edition |
 | **Transaction Mode** | Multi-document ACID session with fallback compensating batch rollback |
 | **Test Database URI** | `mongodb://127.0.0.1:27017/nexcart_test_db` |
-| **Test Execution Date** | October 15, 2026 |
+| **Test Execution Date** | October 16, 2026 |
 | **Test Command** | `npm test` (`node tests/integration.test.js`) |
-| **Test Result** | **168 Passed, 0 Failed (100% Pass Rate across 14 Suites)** |
+| **Test Result** | **230 Passed, 0 Failed (100% Pass Rate across 16 Suites)** |
 
 ---
 
@@ -250,8 +250,35 @@ All automated integration tests are executed against an isolated MongoDB test da
   ✅ PASS: Analytics top-products handles negative limit with HTTP 200
   ✅ PASS: Payload exceeding 500 KB is rejected with HTTP 413 Payload Too Large
 
+--- SUITE 16: Customer Loyalty & Rewards Points Engine ---
+  ✅ PASS: Customer retrieves loyalty profile with HTTP 200
+  ✅ PASS: Seeded customer Emily has Gold tier membership
+  ✅ PASS: Customer has valid points balance (715 pts)
+  ✅ PASS: Loyalty points value in INR is accurate (10 pts = ₹1.00)
+  ✅ PASS: Gold tier grants 1.5x points multiplier
+  ✅ PASS: Loyalty history records seeded
+  ✅ PASS: Unauthenticated request to /loyalty/me rejected with HTTP 401
+  ✅ PASS: Cashier can lookup customer by phone with HTTP 200
+  ✅ PASS: Lookup returns matching customer
+  ✅ PASS: Lookup customer matches Emily Watson
+  ✅ PASS: Lookup reveals customer Gold tier
+  ✅ PASS: Customer forbidden from calling /loyalty/lookup with HTTP 403
+  ✅ PASS: Redemption calculation succeeds with HTTP 200
+  ✅ PASS: 100 points yields ₹10.00 discount
+  ✅ PASS: Net subtotal after loyalty discount is ₹490
+  ✅ PASS: Redemption under 50 points rejected with HTTP 400
+  ✅ PASS: Redemption exceeding 50% subtotal rejected with HTTP 400
+  ✅ PASS: Order with loyalty points redemption created with HTTP 201
+  ✅ PASS: Order records 100 loyalty points redeemed
+  ✅ PASS: Order records ₹10.00 loyalty discount
+  ✅ PASS: Order awards points to Gold customer (1.5x multiplier)
+  ✅ PASS: Updated profile retrieved
+  ✅ PASS: Customer balance accurately updated to 679 pts
+  ✅ PASS: Admin cancels order with HTTP 200
+  ✅ PASS: Customer points balance fully restored to 715 after order cancellation
+
 ================================================================
-📊 TEST SUITE SUMMARY: 168 PASSED, 0 FAILED (100% Pass Rate across 14 Suites)
+📊 TEST SUITE SUMMARY: 230 PASSED, 0 FAILED (100% Pass Rate across 16 Suites)
 ================================================================
 ```
 
@@ -302,3 +329,9 @@ All automated integration tests are executed against an isolated MongoDB test da
 | TC-40 | POS / Checkout | Pre-checkout duplicate line items aggregation | Combines quantities for repeated product lines before inventory stock verification | Passed |
 | TC-41 | API / Pagination | Robust pagination bounding | Gracefully bounds negative page numbers and caps excessive limits to safe defaults | Passed |
 | TC-42 | Server / Security | Request body size limit hardening | Rejects payloads exceeding 500 KB with HTTP 413 Payload Too Large (DoS mitigation) | Passed |
+| TC-43 | Loyalty / Profile | Customer profile & tier calculation | Authenticated customer fetches tier, multiplier, and INR currency value (10 pts = ₹1) | Passed |
+| TC-44 | Loyalty / POS | Cashier customer lookup by phone digit matching | Matches customer across varied spacing formats; rejects unauthorized customer role | Passed |
+| TC-45 | Loyalty / Rules | Redemption bounds validation | Strictly enforces 50 points minimum and 50% order subtotal ceiling with 400 rejection | Passed |
+| TC-46 | Loyalty / Checkout | Omnichannel point deduction and multiplier award | Server applies loyalty discount, deducts points, and calculates tier-multiplied bonus | Passed |
+| TC-47 | Loyalty / Reversal | Automatic cancellation point rollback | Order cancellation refunds redeemed points and claws back earned points into balance | Passed |
+

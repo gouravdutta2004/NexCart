@@ -67,10 +67,18 @@ NexCart operates on a 3-tier client-server architecture:
 - The system shall compute daily, weekly, and monthly Gross Merchandise Value (GMV), net revenue, and average transaction value.
 - The system shall project next-cycle demand using transparent moving-average velocity metrics.
 
+#### FR-08: Omnichannel Customer Loyalty & Rewards Points Engine
+- The system shall maintain real-time loyalty point balances, tier classifications (`Bronze`, `Silver`, `Gold`, `Platinum`), and lifetime expenditure tracking for registered customers.
+- Point accrual rates shall dynamically scale based on customer tier multiplier (e.g., Bronze 1.0x, Silver 1.25x, Gold 1.5x, Platinum 2.0x).
+- Standard conversion rate shall be strictly enforced (10 points = ₹1.00 discount) with minimum redemption threshold (50 points) and maximum subtotal safety ceiling (50%).
+- Point redemption shall be seamlessly supported across online customer checkout and cashier POS terminal with customer lookup by phone number/email.
+- Order cancellations and refunds shall automatically reverse loyalty accrual and restore redeemed points with ledger audit records.
+
 ---
 
 ### 4. Non-Functional Requirements
-- **Performance:** Barcode query response time < 50ms; checkout transaction completion < 500ms.
+- **Performance:** Barcode query response time < 50ms; checkout transaction completion < 500ms; loyalty profile & redemption lookup < 50ms.
 - **Security:** Passwords salted with bcrypt (10 rounds); JWT tokens signed with SHA-256; Helmet HTTP security headers; CORS restricted; API rate limiting.
 - **Availability:** Robust database reconnection handler and stateless application tier.
 - **Maintainability:** Modular separation of concerns (Controllers, Services, Models, Routes, Validators).
+

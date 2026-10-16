@@ -23,7 +23,8 @@ import {
   Lock,
   CheckCircle2,
   AlertCircle,
-  Receipt
+  Receipt,
+  Coins
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { useCart } from '../../context/CartContext';
@@ -388,8 +389,14 @@ export default function Navbar() {
                       <p className="text-[11px] text-slate-500 dark:text-slate-400 truncate">
                         {user.email}
                       </p>
-                      <div className="mt-1.5">
+                      <div className="mt-1.5 flex items-center justify-between">
                         <StatusBadge status={user.role} type="role" size="sm" />
+                        {user.role === ROLES.CUSTOMER && (
+                          <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-100 dark:bg-amber-900/60 text-amber-800 dark:text-amber-300 flex items-center gap-1">
+                            <Coins className="w-3 h-3 text-amber-500" />
+                            {user.loyaltyPoints !== undefined ? user.loyaltyPoints : 0} pts
+                          </span>
+                        )}
                       </div>
                     </div>
 

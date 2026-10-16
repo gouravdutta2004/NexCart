@@ -8,6 +8,7 @@ const Cart = require('../models/Cart');
 const Inventory = require('../models/Inventory');
 const AuditLog = require('../models/AuditLog');
 const inventoryService = require('./inventoryService');
+const loyaltyService = require('./loyaltyService');
 const { emitNotification } = require('../config/socket');
 const AppError = require('../utils/apiError');
 const { 
@@ -69,9 +70,11 @@ const supportsTransactions = async () => {
 const createOrder = async ({
   userId = null,
   cashierId = null,
+  customerId = null,
   orderType = ORDER_TYPES.ONLINE,
   items = [],
   couponCode = null,
+  loyaltyPointsToRedeem = 0,
   paymentDetails = {},
   shippingAddress = null,
   notes = '',
@@ -251,16 +254,30 @@ const createOrder = async ({
       appliedCoupon = incrementedCoupon;
     }
 
-    const discountTotal = Math.round((lineDiscountTotal + couponDiscount) * 100) / 100;
-    const grandTotal = Math.max(0, Math.round((subtotal - discountTotal + taxTotal) * 100) / 100);
-
-    // 3. Resolve Customer Snapshot
+    // 3. Resolve Customer Snapshot & Loyalty Redemption
+    const targetCustomerId = userId || customerId || null;
     let customerUser = null;
-    if (userId) {
-      const userQuery = User.findById(userId);
+    if (targetCustomerId) {
+      const userQuery = User.findById(targetCustomerId);
       if (session) userQuery.session(session);
       customerUser = await userQuery;
     }
+
+    let loyaltyDiscount = 0;
+    let actualPointsRedeemed = 0;
+    if (loyaltyPointsToRedeem && Number(loyaltyPointsToRedeem) > 0 && customerUser) {
+      const availableSubtotal = Math.max(0, subtotal - lineDiscountTotal - couponDiscount);
+      const redemptionCalc = await loyaltyService.calculateRedemption({
+        userId: customerUser._id,
+        pointsToRedeem: Number(loyaltyPointsToRedeem),
+        subtotal: availableSubtotal,
+      });
+      loyaltyDiscount = redemptionCalc.discountAmount;
+      actualPointsRedeemed = redemptionCalc.pointsToRedeem;
+    }
+
+    const discountTotal = Math.round((lineDiscountTotal + couponDiscount + loyaltyDiscount) * 100) / 100;
+    const grandTotal = Math.max(0, Math.round((subtotal - discountTotal + taxTotal) * 100) / 100);
 
     const customerSnapshot = {
       name: customerUser ? customerUser.name : (paymentDetails.customerName || 'Walk-in Customer'),
@@ -283,6 +300,9 @@ const createOrder = async ({
       discountTotal,
       couponCode: appliedCoupon ? appliedCoupon.code : null,
       couponDiscount,
+      loyaltyPointsEarned: 0,
+      loyaltyPointsRedeemed: actualPointsRedeemed,
+      loyaltyDiscount,
       taxTotal,
       totalAmount: grandTotal,
       orderStatus: orderStatus || ORDER_STATUS.COMPLETED,
@@ -362,6 +382,9 @@ const createOrder = async ({
       discountTotal,
       couponCode: appliedCoupon ? appliedCoupon.code : null,
       couponDiscount,
+      loyaltyPointsEarned: 0,
+      loyaltyPointsRedeemed: actualPointsRedeemed,
+      loyaltyDiscount,
       taxBreakdown: {
         cgst: Math.round((taxTotal / 2) * 100) / 100,
         sgst: Math.round((taxTotal / 2) * 100) / 100,
@@ -394,6 +417,45 @@ const createOrder = async ({
       isCommitted = true;
     } else {
       isCommitted = true;
+    }
+
+    // 8.5 Process Loyalty Points Deduction & Awarding
+    if (actualPointsRedeemed > 0 && customerUser) {
+      await loyaltyService.redeemOrderPoints({
+        userId: customerUser._id,
+        orderId: order._id,
+        orderNumber: order.orderNumber,
+        pointsToRedeem: actualPointsRedeemed,
+        discountAmount: loyaltyDiscount,
+      });
+    }
+
+    if (customerUser && order.orderStatus === ORDER_STATUS.COMPLETED) {
+      const netSubtotalForPoints = Math.max(0, subtotal - discountTotal);
+      const pointsAwarded = await loyaltyService.awardOrderPoints({
+        userId: customerUser._id,
+        orderId: order._id,
+        orderNumber: order.orderNumber,
+        netSubtotal: netSubtotalForPoints,
+      });
+      if (pointsAwarded > 0) {
+        order.loyaltyPointsEarned = pointsAwarded;
+        await order.save({ validateBeforeSave: false });
+        if (savedInvoiceDoc) {
+          savedInvoiceDoc.loyaltyPointsEarned = pointsAwarded;
+          await savedInvoiceDoc.save({ validateBeforeSave: false });
+        }
+
+        try {
+          emitNotification({ userId: customerUser._id.toString() }, 'loyalty_update', {
+            pointsEarned: pointsAwarded,
+            orderNumber: order.orderNumber,
+            title: `🎉 ${pointsAwarded} NexPoints Earned!`,
+            message: `You earned ${pointsAwarded} reward points on Order #${order.orderNumber}.`,
+            timestamp: new Date().toISOString(),
+          });
+        } catch (notifErr) {}
+      }
     }
 
     // 9. Real-time Notification Dispatch (STRICTLY Post-commit, outside transaction)
@@ -797,6 +859,9 @@ const updateOrderStatus = async (orderId, status, actingUserId, userRole = ROLES
         { $inc: { usedCount: -1 } }
       );
     }
+
+    // Revert loyalty points (refund redeemed points and claw back earned points)
+    await loyaltyService.revertOrderPoints(order);
   }
 
   order.orderStatus = status;

@@ -23,10 +23,14 @@ import {
   Loader2,
   User,
   Zap,
-  Info
+  Info,
+  Coins,
+  Award,
+  Search
 } from 'lucide-react';
 import posService from '../../services/posService';
 import orderService from '../../services/orderService';
+import loyaltyService from '../../services/loyaltyService';
 import { useAuth } from '../../context/AuthContext';
 import { formatCurrency, formatDateTime } from '../../utils/formatters';
 import Button from '../../components/ui/Button';
@@ -42,10 +46,16 @@ export default function PosTerminal() {
   const [loadingScan, setLoadingScan] = useState(false);
   const [scanError, setScanError] = useState(null);
 
-  // Held Carts
+  // Held Carts & Customer Loyalty
   const [heldCarts, setHeldCarts] = useState([]);
   const [showHeldModal, setShowHeldModal] = useState(false);
   const [customerName, setCustomerName] = useState('Walk-in Shopper');
+  const [attachedCustomer, setAttachedCustomer] = useState(null);
+  const [customerSearchQuery, setCustomerSearchQuery] = useState('');
+  const [customerSearchResults, setCustomerSearchResults] = useState([]);
+  const [searchingCustomer, setSearchingCustomer] = useState(false);
+  const [showCustomerSearch, setShowCustomerSearch] = useState(false);
+  const [loyaltyPointsToRedeem, setLoyaltyPointsToRedeem] = useState(0);
 
   // Payment Modal
   const [showPaymentModal, setShowPaymentModal] = useState(false);
@@ -172,6 +182,7 @@ export default function PosTerminal() {
 
   const clearBillingCart = () => {
     setBillingItems([]);
+    setLoyaltyPointsToRedeem(0);
     setScanError(null);
     barcodeInputRef.current?.focus();
   };
@@ -189,7 +200,39 @@ export default function PosTerminal() {
     const netItemPrice = Math.max(0, item.unitPrice * item.quantity - (item.discount || 0));
     return sum + (netItemPrice * (item.taxRate || 0)) / 100;
   }, 0);
-  const grandTotal = Math.max(0, subtotal - totalDiscount + totalTax);
+
+  const loyaltyDiscount = Math.round(loyaltyPointsToRedeem * 0.10 * 100) / 100;
+  const grandTotal = Math.max(0, Math.round((subtotal - totalDiscount - loyaltyDiscount + totalTax) * 100) / 100);
+
+  const handleSearchCustomer = async (e) => {
+    e?.preventDefault();
+    if (!customerSearchQuery.trim()) return;
+    setSearchingCustomer(true);
+    try {
+      const res = await loyaltyService.lookupCustomer(customerSearchQuery.trim());
+      const custs = res?.data?.data?.customers || res?.data?.customers || [];
+      setCustomerSearchResults(custs);
+    } catch {
+      setCustomerSearchResults([]);
+    } finally {
+      setSearchingCustomer(false);
+    }
+  };
+
+  const handleAttachCustomer = (cust) => {
+    setAttachedCustomer(cust);
+    setCustomerName(cust.name);
+    setShowCustomerSearch(false);
+    setCustomerSearchResults([]);
+    setCustomerSearchQuery('');
+    setLoyaltyPointsToRedeem(0);
+  };
+
+  const handleDetachCustomer = () => {
+    setAttachedCustomer(null);
+    setCustomerName('Walk-in Shopper');
+    setLoyaltyPointsToRedeem(0);
+  };
 
   const handleHoldCart = async () => {
     if (billingItems.length === 0) return;
@@ -239,6 +282,8 @@ export default function PosTerminal() {
     try {
       const payload = {
         orderType: 'pos_walkin',
+        customerId: attachedCustomer ? attachedCustomer._id : undefined,
+        loyaltyPointsToRedeem: loyaltyPointsToRedeem > 0 ? loyaltyPointsToRedeem : undefined,
         items: billingItems.map((item) => ({
           productId: item.productId || item._id,
           quantity: item.quantity,
@@ -246,7 +291,9 @@ export default function PosTerminal() {
         })),
         paymentDetails: {
           method: paymentMethod,
-          customerName: customerName,
+          customerName: attachedCustomer ? attachedCustomer.name : customerName,
+          customerPhone: attachedCustomer?.phone,
+          customerEmail: attachedCustomer?.email,
           tenderDetails: {
             cashTendered: tendered,
             changeDue: change,
@@ -265,10 +312,14 @@ export default function PosTerminal() {
         orderNumber: orderData.orderNumber,
         date: new Date(),
         cashier: user?.name || 'Cashier',
-        customer: customerName,
+        customer: attachedCustomer ? attachedCustomer.name : customerName,
+        customerTier: attachedCustomer?.loyaltyTier,
         items: [...billingItems],
         subtotal,
         totalDiscount,
+        loyaltyPointsRedeemed: loyaltyPointsToRedeem,
+        loyaltyDiscount,
+        loyaltyPointsEarned: orderData.loyaltyPointsEarned || 0,
         totalTax,
         grandTotal,
         paymentMethod,
@@ -286,6 +337,9 @@ export default function PosTerminal() {
 
   const handleResetForNextCustomer = () => {
     clearBillingCart();
+    setAttachedCustomer(null);
+    setCustomerName('Walk-in Shopper');
+    setLoyaltyPointsToRedeem(0);
     setShowPaymentModal(false);
     setPaymentSuccess(false);
     setCompletedReceipt(null);
@@ -579,21 +633,141 @@ export default function PosTerminal() {
 
           {/* Right Column: Financial Summary & Tender Controls (4 cols) */}
           <div className="lg:col-span-4 space-y-4">
-            {/* Customer Information Card */}
-            <div className="p-4 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm">
-              <label className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider block mb-1.5">
-                Customer Name / Phone
-              </label>
-              <div className="relative">
-                <User className="w-4 h-4 absolute left-3 top-3 text-slate-400" />
-                <input
-                  type="text"
-                  value={customerName}
-                  onChange={(e) => setCustomerName(e.target.value)}
-                  placeholder="Walk-in Shopper"
-                  className="w-full pl-9 pr-3 py-2 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl text-sm font-semibold text-slate-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-emerald-500"
-                />
+            {/* Customer Information & Loyalty Card */}
+            <div className="p-4 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm space-y-3">
+              <div className="flex items-center justify-between">
+                <label className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider block">
+                  Customer & Rewards
+                </label>
+                {!attachedCustomer ? (
+                  <button
+                    type="button"
+                    onClick={() => setShowCustomerSearch(!showCustomerSearch)}
+                    className="text-xs font-bold text-emerald-600 dark:text-emerald-400 hover:underline flex items-center gap-1"
+                  >
+                    <Search className="w-3.5 h-3.5" />
+                    Lookup Member
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={handleDetachCustomer}
+                    className="text-xs font-bold text-rose-500 hover:underline flex items-center gap-1"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                    Detach
+                  </button>
+                )}
               </div>
+
+              {showCustomerSearch && !attachedCustomer && (
+                <div className="p-3 bg-slate-50 dark:bg-slate-950 rounded-xl border border-slate-200 dark:border-slate-800 space-y-2">
+                  <div className="flex gap-2">
+                    <input
+                      type="text"
+                      value={customerSearchQuery}
+                      onChange={(e) => setCustomerSearchQuery(e.target.value)}
+                      placeholder="Phone or Email or Name..."
+                      className="flex-1 px-3 py-1.5 text-xs bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-slate-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-emerald-500"
+                    />
+                    <Button
+                      type="button"
+                      variant="primary"
+                      size="sm"
+                      loading={searchingCustomer}
+                      onClick={handleSearchCustomer}
+                      className="px-3 text-xs"
+                    >
+                      Search
+                    </Button>
+                  </div>
+                  {customerSearchResults.length > 0 && (
+                    <div className="max-h-36 overflow-y-auto space-y-1 divide-y divide-slate-100 dark:divide-slate-800 text-xs">
+                      {customerSearchResults.map((c) => (
+                        <div
+                          key={c._id}
+                          onClick={() => handleAttachCustomer(c)}
+                          className="pt-1.5 pb-1 flex items-center justify-between cursor-pointer hover:bg-emerald-50 dark:hover:bg-emerald-950/40 p-1.5 rounded-lg transition-colors"
+                        >
+                          <div>
+                            <span className="font-bold text-slate-900 dark:text-white block">{c.name}</span>
+                            <span className="text-[10px] text-slate-500">{c.phone || c.email}</span>
+                          </div>
+                          <div className="text-right">
+                            <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-amber-100 dark:bg-amber-900/60 text-amber-800 dark:text-amber-300">
+                              {c.loyaltyTier}
+                            </span>
+                            <span className="text-[11px] font-mono text-emerald-600 block mt-0.5">
+                              {c.loyaltyPoints} pts
+                            </span>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {!attachedCustomer ? (
+                <div className="relative">
+                  <User className="w-4 h-4 absolute left-3 top-3 text-slate-400" />
+                  <input
+                    type="text"
+                    value={customerName}
+                    onChange={(e) => setCustomerName(e.target.value)}
+                    placeholder="Walk-in Shopper"
+                    className="w-full pl-9 pr-3 py-2 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl text-sm font-semibold text-slate-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-emerald-500"
+                  />
+                </div>
+              ) : (
+                <div className="p-3 rounded-xl bg-gradient-to-r from-amber-50 to-orange-50 dark:from-amber-950/40 dark:to-orange-950/20 border border-amber-200 dark:border-amber-800/60 space-y-2">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <span className="font-bold text-xs text-slate-900 dark:text-white block">
+                        {attachedCustomer.name}
+                      </span>
+                      <span className="text-[11px] text-slate-500 dark:text-slate-400">
+                        {attachedCustomer.phone || attachedCustomer.email}
+                      </span>
+                    </div>
+                    <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-200/70 dark:bg-amber-900 text-amber-900 dark:text-amber-200">
+                      {attachedCustomer.loyaltyTier} ({attachedCustomer.multiplier}x)
+                    </span>
+                  </div>
+
+                  <div className="flex items-center justify-between pt-1 text-xs border-t border-amber-200/60 dark:border-amber-800/40">
+                    <span className="text-slate-600 dark:text-slate-400 flex items-center gap-1 text-[11px]">
+                      <Coins className="w-3.5 h-3.5 text-amber-500" />
+                      Balance: {attachedCustomer.loyaltyPoints} pts ({formatCurrency(attachedCustomer.currencyValue)})
+                    </span>
+                    {loyaltyPointsToRedeem > 0 ? (
+                      <button
+                        type="button"
+                        onClick={() => setLoyaltyPointsToRedeem(0)}
+                        className="text-[11px] font-bold text-rose-500 hover:underline"
+                      >
+                        Cancel ({loyaltyPointsToRedeem} pts)
+                      </button>
+                    ) : (
+                      attachedCustomer.loyaltyPoints >= 50 && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const maxPts = Math.min(
+                              attachedCustomer.loyaltyPoints,
+                              Math.floor((subtotal * 0.5) / 0.10)
+                            );
+                            setLoyaltyPointsToRedeem(maxPts);
+                          }}
+                          className="text-[11px] font-bold text-amber-700 dark:text-amber-300 hover:underline bg-amber-100 dark:bg-amber-900/60 px-2 py-0.5 rounded-lg"
+                        >
+                          Redeem Points
+                        </button>
+                      )
+                    )}
+                  </div>
+                </div>
+              )}
             </div>
 
             {/* Financial Summary */}
@@ -611,6 +785,12 @@ export default function PosTerminal() {
                   <span>Item Discounts:</span>
                   <span className="font-mono font-medium">-{formatCurrency(totalDiscount)}</span>
                 </div>
+                {loyaltyDiscount > 0 && (
+                  <div className="flex justify-between text-amber-600 dark:text-amber-400 font-semibold">
+                    <span>NexPoints Discount ({loyaltyPointsToRedeem} pts):</span>
+                    <span className="font-mono font-medium">-{formatCurrency(loyaltyDiscount)}</span>
+                  </div>
+                )}
                 <div className="flex justify-between">
                   <span>Estimated GST (CGST + SGST):</span>
                   <span className="font-mono text-slate-900 dark:text-white font-medium">{formatCurrency(totalTax)}</span>
@@ -881,6 +1061,18 @@ export default function PosTerminal() {
                         <span>Discounts:</span>
                         <span>-{formatCurrency(completedReceipt.totalDiscount)}</span>
                       </div>
+                      {completedReceipt.loyaltyPointsRedeemed > 0 && (
+                        <div className="flex justify-between text-amber-700">
+                          <span>NexPoints ({completedReceipt.loyaltyPointsRedeemed} pts):</span>
+                          <span>-{formatCurrency(completedReceipt.loyaltyDiscount)}</span>
+                        </div>
+                      )}
+                      {completedReceipt.loyaltyPointsEarned > 0 && (
+                        <div className="flex justify-between text-emerald-700 font-bold">
+                          <span>NexPoints Earned:</span>
+                          <span>+{completedReceipt.loyaltyPointsEarned} pts</span>
+                        </div>
+                      )}
                       <div className="flex justify-between">
                         <span>Tax Total (GST):</span>
                         <span>{formatCurrency(completedReceipt.totalTax)}</span>

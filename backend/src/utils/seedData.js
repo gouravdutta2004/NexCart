@@ -43,6 +43,25 @@ const seedUsers = [
     role: ROLES.CUSTOMER,
     phone: '+91 98201 04004',
     status: 'active',
+    loyaltyPoints: 350,
+    loyaltyTier: 'Gold',
+    lifetimeSpend: 24500,
+    loyaltyHistory: [
+      {
+        points: 200,
+        type: 'earned',
+        reason: 'Welcome Bonus: NexCart Premier Membership',
+        orderNumber: 'NXC-INIT-001',
+        createdAt: new Date(Date.now() - 30 * 86400000),
+      },
+      {
+        points: 150,
+        type: 'earned',
+        reason: 'Earned on Order #NXC-ORD-8821 (Gold Tier 1.5x)',
+        orderNumber: 'NXC-ORD-8821',
+        createdAt: new Date(Date.now() - 7 * 86400000),
+      },
+    ],
   },
 ];
 

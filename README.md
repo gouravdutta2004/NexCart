@@ -9,7 +9,7 @@
     <img src="https://img.shields.io/badge/MongoDB-7.0-47a248?style=flat-square&logo=mongodb&logoColor=white" alt="MongoDB" />
     <img src="https://img.shields.io/badge/Vite-6.0-646cff?style=flat-square&logo=vite&logoColor=white" alt="Vite" />
     <img src="https://img.shields.io/badge/TailwindCSS-3.4-38bdf8?style=flat-square&logo=tailwindcss&logoColor=white" alt="TailwindCSS" />
-    <img src="https://img.shields.io/badge/Tests-205%20Passed%20(100%25)-emerald?style=flat-square" alt="Tests" />
+    <img src="https://img.shields.io/badge/Tests-230%20Passed%20(100%25)-emerald?style=flat-square" alt="Tests" />
   </p>
 </div>
 
@@ -17,7 +17,7 @@
 
 ## 📌 Project Overview
 
-**NexCart** is an automated, enterprise-grade full-stack supermarket automation solution. It bridges the physical and digital retail ecosystem by integrating **Point-of-Sale (POS) cashier checkout**, **First-Expired First-Out (FEFO) multi-batch inventory depletion**, **customer self-checkout kiosks**, **digital GST tax invoices**, **algorithmic dynamic markdown clearance**, **statistical moving-average demand forecasting**, and **tamper-evident administrative compliance auditing**.
+**NexCart** is an automated, enterprise-grade full-stack supermarket automation solution. It bridges the physical and digital retail ecosystem by integrating **Point-of-Sale (POS) cashier checkout**, **First-Expired First-Out (FEFO) multi-batch inventory depletion**, **customer self-checkout kiosks**, **omnichannel customer loyalty & rewards points**, **digital GST tax invoices**, **algorithmic dynamic markdown clearance**, **statistical moving-average demand forecasting**, and **tamper-evident administrative compliance auditing**.
 
 ---
 
@@ -37,6 +37,7 @@ NexCart follows a decoupled, layered **Three-Tier Architecture** guaranteeing hi
 │  ├── JWT Authentication & Bcrypt Password Hashing                      │
 │  ├── Role-Based Access Control (RBAC: Admin, Cashier, InvMgr, Customer)│
 │  ├── FEFO Inventory Depletion & Expiry Radar Engine                    │
+│  ├── Omnichannel Customer Loyalty & Rewards Points Engine              │
 │  ├── Real-time Socket.io Event Bus (Stock Alerts, Order Broadcasts)   │
 │  ├── PDFKit Dynamic Tax Invoice Streaming Engine                       │
 │  └── Moving-Average Demand Forecasting & Markdown Services             │
@@ -60,11 +61,12 @@ NexCart follows a decoupled, layered **Three-Tier Architecture** guaranteeing hi
 3. **Expiry Radar & Dynamic Markdowns:** Identifies batches approaching their expiration threshold (3, 7, 15, or 30 days) and recommends automated clearance markdowns (10% to 50%) to accelerate sell-through.
 4. **Touchscreen Self-Checkout Kiosk:** An express barcode scanner terminal for walk-in shoppers with instant item ringing, basket calculations, simulated tenders (Cash, Card, UPI), and digital exit passes.
 5. **High-Speed Cashier POS Lane:** Supports rapid barcode scanning, cart holding/parking with multi-customer multitasking, and cashier discount overrides guarded by HMAC manager authorizations.
-6. **Digital GST Tax Invoices:** Compiles server-side rendered A4 tax invoices with full GST breakdowns (CGST/SGST), streamable directly as genuine PDF documents via PDFKit.
-7. **Explainable Demand Forecasting:** Computes transparent 7-day Simple Moving Average (SMA) velocities and sales trend multipliers to forecast 7-day and 14-day replenishment requirements.
-8. **Procurement & Supplier Operations:** Manages supplier directories, generates procurement purchase orders, receives goods with automatic batch generation, and supports PO cancellation.
-9. **Tamper-Evident Audit Trail:** An append-only log capturing all administrative and operational activities with JSON state diffs (`previousState` vs `newState`) guarded by Mongoose immutability hooks.
-10. **Verified Customer Reviews:** Enables authenticated shoppers with verified completed purchases to rate products (1–5 stars), write comments, and manage their reviews.
+6. **Customer Loyalty & Rewards Points Engine:** Omnichannel customer loyalty program with tier progression (`Bronze`, `Silver`, `Gold`, `Platinum`), dynamic earning multipliers (1.0x to 2.0x), cashier POS member lookup by phone, point redemption with subtotal limits, and automated cancellation adjustments.
+7. **Digital GST Tax Invoices:** Compiles server-side rendered A4 tax invoices with full GST breakdowns (CGST/SGST), streamable directly as genuine PDF documents via PDFKit.
+8. **Explainable Demand Forecasting:** Computes transparent 7-day Simple Moving Average (SMA) velocities and sales trend multipliers to forecast 7-day and 14-day replenishment requirements.
+9. **Procurement & Supplier Operations:** Manages supplier directories, generates procurement purchase orders, receives goods with automatic batch generation, and supports PO cancellation.
+10. **Tamper-Evident Audit Trail:** An append-only log capturing all administrative and operational activities with JSON state diffs (`previousState` vs `newState`) guarded by Mongoose immutability hooks.
+11. **Verified Customer Reviews:** Enables authenticated shoppers with verified completed purchases to rate products (1–5 stars), write comments, and manage their reviews.
 
 ---
 

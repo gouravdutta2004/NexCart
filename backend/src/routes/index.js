@@ -15,6 +15,7 @@ const analyticsRoutes = require('./analyticsRoutes');
 const discountRoutes = require('./discountRoutes');
 const auditRoutes = require('./auditRoutes');
 const userRoutes = require('./userRoutes');
+const loyaltyRoutes = require('./loyaltyRoutes');
 
 // Mount route modules
 router.use('/auth', authRoutes);
@@ -32,6 +33,7 @@ router.use('/analytics', analyticsRoutes);
 router.use('/discounts', discountRoutes);
 router.use('/audit-logs', auditRoutes);
 router.use('/users', userRoutes);
+router.use('/loyalty', loyaltyRoutes);
 
 // Standardized health check endpoint
 const { getDBStatus } = require('../config/db');
